@@ -1,6 +1,3 @@
-<<<<<<< HEAD
-# BETTHAT
-=======
 # BETTHAT
 
 ## Overview
@@ -34,4 +31,6 @@ Contributions are welcome! Please open an issue or submit a pull request.
 ## License
 
 This project is licensed under the MIT License.
->>>>>>> c3f35b4 (ReadMe Creation)
+
+
+Making new changes
