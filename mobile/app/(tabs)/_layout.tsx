@@ -1,23 +1,82 @@
 import { Tabs } from 'expo-router';
-import { View, Text } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path, Circle } from 'react-native-svg';
 
-type IconName = React.ComponentProps<typeof Ionicons>['name'];
+// Holy Grail V2 tab bar — Home · Market · Matchups · Sidebets · Profile.
+// Sky blue active, muted gray inactive. Plex Mono labels.
+// Underlying file `lineup.tsx` retained as Market route to avoid breaking
+// existing deep-link references; label and icon present as Market.
+
+const SKY = '#5B9BD5';
+const MUTED = '#8A93A6';
+const JET = '#0A0A0C';
+const HAIRLINE = 'rgba(255,255,255,0.08)';
+
+function Icon({ name, color }: { name: string; color: string }) {
+  const stroke = color;
+  const sw = 1.5;
+  switch (name) {
+    case 'home':
+      return (
+        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="m3 12 9-9 9 9" />
+          <Path d="M5 10v10h14V10" />
+        </Svg>
+      );
+    case 'market':
+      return (
+        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M3 17l6-6 4 4 8-8" />
+          <Path d="M14 7h7v7" />
+        </Svg>
+      );
+    case 'matchups':
+      return (
+        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+          <Circle cx={12} cy={12} r={9} />
+          <Path d="M12 3v18M3 12h18" />
+        </Svg>
+      );
+    case 'sidebets':
+      return (
+        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
+        </Svg>
+      );
+    case 'profile':
+      return (
+        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
+          <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+          <Circle cx={12} cy={7} r={4} />
+        </Svg>
+      );
+    default:
+      return null;
+  }
+}
 
 function TabIcon({
-  name, focused, label,
-}: { name: IconName; focused: boolean; label: string }) {
+  iconName,
+  focused,
+  label,
+}: {
+  iconName: string;
+  focused: boolean;
+  label: string;
+}) {
+  const color = focused ? SKY : MUTED;
   return (
-    <View className="items-center justify-center pt-1">
-      <Ionicons
-        name={focused ? name : `${name}-outline` as IconName}
-        size={24}
-        color={focused ? '#F59E0B' : '#71717A'}
-      />
+    <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 6, gap: 3 }}>
+      <Icon name={iconName} color={color} />
       <Text
-        className="text-[10px] mt-0.5"
-        style={{ color: focused ? '#F59E0B' : '#71717A' }}
+        style={{
+          fontSize: 10,
+          color,
+          letterSpacing: 0.4,
+          fontFamily: Platform.select({ ios: 'DMSans_500Medium', default: 'DMSans_500Medium' }),
+          fontWeight: focused ? '600' : '500',
+        }}
       >
         {label}
       </Text>
@@ -33,11 +92,12 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#0a0a0a',
-          borderTopColor: '#1E1E1E',
+          backgroundColor: JET,
+          borderTopColor: HAIRLINE,
           borderTopWidth: 1,
-          height: 56 + insets.bottom,
-          paddingBottom: insets.bottom,
+          height: 68 + insets.bottom,
+          paddingBottom: insets.bottom + 4,
+          paddingTop: 6,
         },
         tabBarShowLabel: false,
       }}
@@ -45,41 +105,31 @@ export default function TabLayout() {
       <Tabs.Screen
         name="home"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="home" focused={focused} label="Home" />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon iconName="home" focused={focused} label="Home" />,
         }}
       />
       <Tabs.Screen
         name="lineup"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="basketball" focused={focused} label="Lineup" />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon iconName="market" focused={focused} label="Market" />,
         }}
       />
       <Tabs.Screen
         name="matchups"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="flash" focused={focused} label="Matchups" />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} label="Matchups" />,
         }}
       />
       <Tabs.Screen
         name="sidebets"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="stats-chart" focused={focused} label="Sidebets" />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon iconName="sidebets" focused={focused} label="Sidebets" />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          tabBarIcon: ({ focused }) => (
-            <TabIcon name="person" focused={focused} label="Profile" />
-          ),
+          tabBarIcon: ({ focused }) => <TabIcon iconName="profile" focused={focused} label="Profile" />,
         }}
       />
     </Tabs>

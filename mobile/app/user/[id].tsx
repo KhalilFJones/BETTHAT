@@ -3,7 +3,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { formatCurrency, RANK_COLORS } from '@/lib/utils';
+import { formatCurrency, RANK_COLORS, COLORS } from '@/lib/utils';
 
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -16,8 +16,9 @@ export default function UserProfileScreen() {
         .from('profiles')
         .select('*')
         .eq('id', id)
-        .single();
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error('User not found');
       return data;
     },
     enabled: !!id,
@@ -26,9 +27,10 @@ export default function UserProfileScreen() {
   const { data: achievements } = useQuery({
     queryKey: ['user_achievements_public', id],
     queryFn: async () => {
+      // Schema columns: name, rarity (not icon/title).
       const { data } = await supabase
         .from('user_achievements')
-        .select('*, achievement:achievements(icon, title, rarity)')
+        .select('*, achievement:achievements(name, rarity)')
         .eq('user_id', id!)
         .order('earned_at', { ascending: false })
         .limit(9);
@@ -39,68 +41,65 @@ export default function UserProfileScreen() {
 
   if (isLoading || !user) {
     return (
-      <SafeAreaView className="flex-1 bg-[#0a0a0a] items-center justify-center">
-        <ActivityIndicator color="#F59E0B" />
+      <SafeAreaView className="flex-1 bg-bg items-center justify-center">
+        <ActivityIndicator color={COLORS.brand} />
       </SafeAreaView>
     );
   }
 
   const rankColor = RANK_COLORS[user.rank_tier ?? 'Bronze'];
-  const winRate = user.total_wins + user.total_losses > 0
-    ? Math.round((user.total_wins / (user.total_wins + user.total_losses)) * 100)
+  const totalGames = (user.total_wins ?? 0) + (user.total_losses ?? 0);
+  const winRate = totalGames > 0
+    ? Math.round(((user.total_wins ?? 0) / totalGames) * 100)
     : 0;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
       <View className="flex-row items-center px-5 pt-4 pb-2">
         <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-[#F59E0B] text-sm">← Back</Text>
+          <Text className="text-brand text-sm">← Back</Text>
         </TouchableOpacity>
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        {/* Header */}
         <View className="items-center px-5 pt-4 pb-6">
           <View
-            className="w-20 h-20 rounded-full bg-[#1E1E1E] border-2 items-center justify-center mb-3"
+            className="w-20 h-20 rounded-full bg-surface border-2 items-center justify-center mb-3"
             style={{ borderColor: rankColor }}
           >
-            <Text className="text-4xl">{user.display_name?.[0]?.toUpperCase() ?? '?'}</Text>
+            <Text className="text-text-primary text-4xl">{user.display_name?.[0]?.toUpperCase() ?? '?'}</Text>
           </View>
-          <Text className="text-white text-2xl font-black">{user.display_name ?? user.username}</Text>
-          <Text className="text-[#71717A] text-sm">@{user.username}</Text>
+          <Text className="text-text-primary text-2xl font-bold">{user.display_name ?? user.username}</Text>
+          <Text className="text-text-muted text-sm font-sans">@{user.username}</Text>
           <View className="mt-2 px-3 py-1 rounded-full border" style={{ borderColor: rankColor }}>
-            <Text className="text-xs font-bold" style={{ color: rankColor }}>🏅 {user.rank_tier}</Text>
+            <Text className="text-xs font-bold" style={{ color: rankColor }}>{user.rank_tier}</Text>
           </View>
         </View>
 
-        {/* Stats */}
-        <View className="mx-5 bg-[#141414] border border-[#2E2E2E] rounded-2xl p-5 mb-6">
+        <View className="mx-5 bg-surface border border-surface-border rounded-2xl p-5 mb-6">
           <View className="flex-row justify-between mb-4">
-            <StatCell label="Wins" value={String(user.total_wins)} color="#22C55E" />
-            <StatCell label="Losses" value={String(user.total_losses)} color="#EF4444" />
-            <StatCell label="Win Rate" value={`${winRate}%`} color="#F59E0B" />
+            <StatCell label="Wins" value={String(user.total_wins)} color={COLORS.win} />
+            <StatCell label="Losses" value={String(user.total_losses)} color={COLORS.loss} />
+            <StatCell label="Win Rate" value={`${winRate}%`} color={COLORS.brand} />
           </View>
           <View className="flex-row justify-center">
-            <StatCell label="Total Earnings" value={formatCurrency(user.total_earnings)} color="#A855F7" />
+            <StatCell label="Total Earnings" value={formatCurrency(Number(user.total_earnings))} color="#A855F7" />
           </View>
         </View>
 
-        {/* Achievements */}
         {(achievements?.length ?? 0) > 0 && (
           <View className="px-5">
-            <Text className="text-white font-black text-lg mb-3">Recent Achievements</Text>
+            <Text className="text-text-primary font-bold text-lg mb-3">Recent Achievements</Text>
             <View className="flex-row flex-wrap gap-3">
               {achievements?.map((ua: any) => {
                 const ach = Array.isArray(ua.achievement) ? ua.achievement[0] : ua.achievement;
                 return (
                   <View
                     key={ua.id}
-                    className="w-[30%] bg-[#141414] border border-[#F59E0B44] rounded-xl p-3 items-center"
+                    className="w-[30%] bg-surface border border-surface-border rounded-xl p-3 items-center"
                   >
-                    <Text className="text-2xl">{ach?.icon ?? '🏅'}</Text>
-                    <Text className="text-white text-[10px] font-bold text-center mt-1" numberOfLines={2}>
-                      {ach?.title ?? 'Achievement'}
+                    <Text className="text-text-primary text-[11px] font-bold text-center" numberOfLines={2}>
+                      {ach?.name ?? 'Achievement'}
                     </Text>
                   </View>
                 );
@@ -116,8 +115,8 @@ export default function UserProfileScreen() {
 function StatCell({ label, value, color }: { label: string; value: string; color: string }) {
   return (
     <View className="items-center">
-      <Text className="text-xl font-black" style={{ color }}>{value}</Text>
-      <Text className="text-[#71717A] text-xs mt-0.5">{label}</Text>
+      <Text className="font-mono text-xl font-bold" style={{ color }}>{value}</Text>
+      <Text className="text-text-muted text-xs mt-0.5 font-sans">{label}</Text>
     </View>
   );
 }

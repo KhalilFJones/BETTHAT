@@ -1,266 +1,310 @@
+// =============================================================================
+// BETTHAT — Sidebets Feed (Holy Grail V2, Screen 09)
+// Peer-to-peer prop posts. Username, take text, player+stat lines, like/dislike,
+// swipe-to-accept. Likes/dislikes write to sidebet_reactions and recompute counts.
+// =============================================================================
+
 import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import Svg, { Path } from 'react-native-svg';
+
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { formatCurrency, propSideLabel } from '@/lib/utils';
-import type { OpenSidebet, Sidebet } from '@/lib/database.types';
-
-type Tab = 'market' | 'my_bets';
-
-const PROP_LABELS: Record<string, string> = {
-  points: 'PTS', rebounds: 'REB', assists: 'AST',
-  steals: 'STL', blocks: 'BLK', fantasy_points: 'FP',
-};
+import {
+  HG, FONT, fmtPrice, fmtRelative,
+  playerInitials,
+} from '@/lib/holygrail';
+import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
+import { SectionHead } from '@/components/holygrail/SectionHead';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 export default function SidebetsScreen() {
   const router = useRouter();
-  const { profile } = useAuthStore();
-  const [tab, setTab] = useState<Tab>('market');
+  const qc = useQueryClient();
+  const { profile, wallet } = useAuthStore();
 
-  const { data: openBets, isLoading: marketLoading, refetch: refetchMarket } = useQuery({
-    queryKey: ['open_sidebets'],
+  const { data: sidebets, isLoading, isRefetching, refetch } = useQuery({
+    queryKey: ['sidebets-feed', profile?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('mv_open_sidebets')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return data as OpenSidebet[];
+      const [feedQ, myReactionsQ] = await Promise.all([
+        supabase
+          .from('sidebets')
+          .select(`
+            id, creator_id, opponent_id, stat_category, line_value, creator_side,
+            creator_reasoning, wager_amount, like_count, dislike_count, comment_count,
+            status, expires_at, created_at,
+            creator:profiles!creator_id(id, username, display_name, rank_tier),
+            nba_players(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position),
+            nba_games(id, home_team_abbreviation, away_team_abbreviation, status, tip_off_time)
+          `)
+          .eq('is_open', true)
+          .eq('status', 'open')
+          .order('created_at', { ascending: false })
+          .limit(30),
+        profile?.id
+          ? supabase.from('sidebet_reactions').select('sidebet_id, reaction').eq('user_id', profile.id)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      if (feedQ.error) throw feedQ.error;
+      const myReactions = new Map<string, 'like' | 'dislike'>();
+      for (const r of (myReactionsQ.data ?? [])) {
+        myReactions.set((r as any).sidebet_id, (r as any).reaction);
+      }
+      return { feed: feedQ.data ?? [], myReactions };
     },
     refetchInterval: 30_000,
   });
 
-  const { data: myBets, isLoading: myLoading, refetch: refetchMy } = useQuery({
-    queryKey: ['my_sidebets', profile?.id],
-    queryFn: async () => {
-      if (!profile?.id) return [];
-      const { data, error } = await supabase
-        .from('sidebets')
-        .select('*')
-        .or(`creator_id.eq.${profile.id},acceptor_id.eq.${profile.id}`)
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      return data as Sidebet[];
+  // Like / dislike mutation. Writes to sidebet_reactions, then recounts.
+  const reactMutation = useMutation({
+    mutationFn: async ({ sidebetId, reaction }: { sidebetId: string; reaction: 'like' | 'dislike' | 'clear' }) => {
+      if (!profile?.id) return;
+      // Always wipe the user's existing reaction first (toggle / switch behaviour)
+      await supabase.from('sidebet_reactions').delete().eq('sidebet_id', sidebetId).eq('user_id', profile.id);
+      if (reaction !== 'clear') {
+        await supabase.from('sidebet_reactions').insert({
+          sidebet_id: sidebetId,
+          user_id: profile.id,
+          reaction,
+        });
+      }
+      // Recount denormalised counters
+      const [{ count: likes }, { count: dislikes }] = await Promise.all([
+        supabase.from('sidebet_reactions').select('id', { count: 'exact', head: true }).eq('sidebet_id', sidebetId).eq('reaction', 'like'),
+        supabase.from('sidebet_reactions').select('id', { count: 'exact', head: true }).eq('sidebet_id', sidebetId).eq('reaction', 'dislike'),
+      ]);
+      await supabase.from('sidebets').update({ like_count: likes ?? 0, dislike_count: dislikes ?? 0 }).eq('id', sidebetId);
     },
-    enabled: !!profile?.id,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['sidebets-feed'] }),
   });
 
-  const isLoading = tab === 'market' ? marketLoading : myLoading;
-
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-5 pt-4 pb-4">
-        <Text className="text-white text-2xl font-black">Sidebets</Text>
-        <TouchableOpacity
-          onPress={() => router.push('/sidebet/create')}
-          className="bg-[#F59E0B] px-4 py-2 rounded-xl"
-        >
-          <Text className="text-black font-bold text-sm">+ CREATE</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Tabs */}
-      <View className="flex-row px-5 mb-4 gap-2">
-        {(['market', 'my_bets'] as Tab[]).map((t) => (
-          <TouchableOpacity
-            key={t}
-            onPress={() => setTab(t)}
-            className="flex-1 py-2 rounded-xl items-center border"
-            style={{
-              backgroundColor: tab === t ? '#F59E0B' : 'transparent',
-              borderColor: tab === t ? '#F59E0B' : '#2E2E2E',
-            }}
-          >
-            <Text
-              className="text-xs font-bold"
-              style={{ color: tab === t ? '#000' : '#71717A' }}
-            >
-              {t === 'market' ? 'MARKET' : 'MY BETS'}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      <ScreenHeader walletBalance={wallet?.balance} />
 
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={isLoading}
-            onRefresh={tab === 'market' ? refetchMarket : refetchMy}
-            tintColor="#F59E0B"
-          />
-        }
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 80 }}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
+        <SectionHead word="Open" emphasis="sidebets" label={String(sidebets?.feed?.length ?? 0)} />
+
         {isLoading ? (
-          <ActivityIndicator color="#F59E0B" className="mt-10" />
-        ) : tab === 'market' ? (
-          (openBets?.length ?? 0) === 0 ? (
-            <EmptyMarket onCreate={() => router.push('/sidebet/create')} />
-          ) : (
-            openBets?.map((bet) => (
-              <OpenSidebetCard
-                key={bet.id}
-                bet={bet}
-                myId={profile?.id ?? ''}
-                onAccept={(id) => router.push(`/sidebet/${id}`)}
-              />
-            ))
-          )
+          <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
+        ) : (sidebets?.feed ?? []).length === 0 ? (
+          <View style={{ paddingHorizontal: 18 }}>
+            <View style={{ padding: 28, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, alignItems: 'center' }}>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, textAlign: 'center', lineHeight: 19 }}>
+                No open sidebets right now. Post the first one.
+              </Text>
+            </View>
+          </View>
         ) : (
-          (myBets?.length ?? 0) === 0 ? (
-            <EmptyMyBets onCreate={() => router.push('/sidebet/create')} />
-          ) : (
-            myBets?.map((bet) => (
-              <MySidebetCard
-                key={bet.id}
-                bet={bet}
-                myId={profile?.id ?? ''}
-                onPress={(id) => router.push(`/sidebet/${id}`)}
+          <View style={{ paddingHorizontal: 18, gap: 16 }}>
+            {(sidebets?.feed ?? []).map((sb: any) => (
+              <SidebetCard
+                key={sb.id}
+                sidebet={sb}
+                myReaction={sidebets?.myReactions.get(sb.id)}
+                isOwnPost={sb.creator_id === profile?.id}
+                onAccept={() => router.push(`/sidebet/${sb.id}` as any)}
+                onPlayerTap={() => sb.nba_players && router.push(`/player/${sb.nba_players.id}` as any)}
+                onLike={() =>
+                  reactMutation.mutate({
+                    sidebetId: sb.id,
+                    reaction: sidebets?.myReactions.get(sb.id) === 'like' ? 'clear' : 'like',
+                  })
+                }
+                onDislike={() =>
+                  reactMutation.mutate({
+                    sidebetId: sb.id,
+                    reaction: sidebets?.myReactions.get(sb.id) === 'dislike' ? 'clear' : 'dislike',
+                  })
+                }
               />
-            ))
-          )
+            ))}
+          </View>
         )}
+
+        <Pressable
+          onPress={() => router.push('/sidebet/create' as any)}
+          style={{
+            marginTop: 22, marginHorizontal: 18,
+            height: 48, borderRadius: 999,
+            backgroundColor: HG.surface, borderColor: HG.skyEdge, borderWidth: 1,
+            alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+          }}
+        >
+          <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={HG.sky} strokeWidth={2} strokeLinecap="round">
+            <Path d="M12 5v14M5 12h14" />
+          </Svg>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.sky, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+            Post a take
+          </Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function OpenSidebetCard({
-  bet, myId, onAccept,
-}: { bet: OpenSidebet; myId: string; onAccept: (id: string) => void }) {
-  const isOwn = bet.creator_id === myId;
-  const { label: sideLabel, color: sideColor } = propSideLabel(bet.creator_side);
-  const oppSide = bet.creator_side === 'over' ? 'under' : 'over';
-  const { label: oppLabel, color: oppColor } = propSideLabel(oppSide);
+// =============================================================================
+function SidebetCard({
+  sidebet, myReaction, isOwnPost, onAccept, onPlayerTap, onLike, onDislike,
+}: {
+  sidebet: any;
+  myReaction?: 'like' | 'dislike';
+  isOwnPost: boolean;
+  onAccept: () => void;
+  onPlayerTap: () => void;
+  onLike: () => void;
+  onDislike: () => void;
+}) {
+  const p = sidebet.nba_players;
+  const game = sidebet.nba_games;
+  const c = sidebet.creator;
+  const overSelected = sidebet.creator_side === 'OVER';
+  const statLabel = labelForStat(sidebet.stat_category);
 
   return (
-    <TouchableOpacity
-      onPress={() => onAccept(bet.id)}
-      className="bg-[#141414] border border-[#2E2E2E] rounded-2xl p-4 mb-3"
-    >
-      {/* Player + prop */}
-      <View className="flex-row items-start justify-between mb-3">
-        <View className="flex-1">
-          <Text className="text-white font-black text-base">{bet.player_name}</Text>
-          <Text className="text-[#71717A] text-xs">{bet.team_abbr}</Text>
-        </View>
-        <View className="items-end">
-          <Text className="text-[#F59E0B] font-black text-lg">
-            {formatCurrency(bet.wager_amount)}
+    <View style={{ backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.hairline, overflow: 'hidden' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.sky, letterSpacing: 0.4 }}>
+            {c?.username ?? '—'}
           </Text>
-          <Text className="text-[#71717A] text-xs">to win {formatCurrency(bet.wager_amount * 2 * 0.95)}</Text>
-        </View>
-      </View>
-
-      {/* Prop line */}
-      <View className="bg-[#1E1E1E] rounded-xl p-3 mb-3">
-        <Text className="text-[#71717A] text-xs text-center mb-1">
-          {PROP_LABELS[bet.prop_type] ?? bet.prop_type} Line
-        </Text>
-        <Text className="text-white text-2xl font-black text-center">{bet.prop_line}</Text>
-      </View>
-
-      {/* Sides */}
-      <View className="flex-row gap-3">
-        <View
-          className="flex-1 rounded-xl py-2.5 items-center border"
-          style={{ borderColor: sideColor, backgroundColor: `${sideColor}15` }}
-        >
-          <Text className="text-xs font-bold" style={{ color: sideColor }}>
-            {sideLabel} (taken)
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>
+            · {fmtRelative(sidebet.created_at)}
           </Text>
-          <Text className="text-[#71717A] text-xs">{bet.creator_username}</Text>
         </View>
-
-        {!isOwn && (
-          <TouchableOpacity
-            onPress={() => onAccept(bet.id)}
-            className="flex-1 rounded-xl py-2.5 items-center"
-            style={{ backgroundColor: oppColor }}
-          >
-            <Text className="text-black text-xs font-black">{oppLabel} — TAKE IT</Text>
-          </TouchableOpacity>
-        )}
+        <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: HG.skyEdge }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky, letterSpacing: 0.4 }}>
+            {fmtPrice(sidebet.wager_amount)}
+          </Text>
+        </View>
       </View>
-    </TouchableOpacity>
-  );
-}
 
-function MySidebetCard({
-  bet, myId, onPress,
-}: { bet: Sidebet; myId: string; onPress: (id: string) => void }) {
-  const isCreator = bet.creator_id === myId;
-  const mySide = isCreator ? bet.creator_side : (bet.creator_side === 'over' ? 'under' : 'over');
-  const { label, color } = propSideLabel(mySide);
-  const isWon = bet.result === (isCreator ? 'creator_win' : 'acceptor_win');
-  const isLost = bet.result === (isCreator ? 'acceptor_win' : 'creator_win');
+      {sidebet.creator_reasoning ? (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 14 }}>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14.5, color: HG.ink, lineHeight: 21 }}>
+            {sidebet.creator_reasoning}
+          </Text>
+        </View>
+      ) : null}
 
-  return (
-    <TouchableOpacity
-      onPress={() => onPress(bet.id)}
-      className="bg-[#141414] border border-[#2E2E2E] rounded-2xl p-4 mb-3"
-    >
-      <View className="flex-row items-center justify-between">
-        <View className="flex-1">
-          <View className="flex-row items-center gap-2 mb-1">
-            <View className="px-2 py-0.5 rounded" style={{ backgroundColor: `${color}20` }}>
-              <Text className="text-xs font-bold" style={{ color }}>{label} {bet.prop_line}</Text>
+      <View style={{ flexDirection: 'row', borderTopWidth: 1, borderColor: HG.hairline }}>
+        <Pressable onPress={onPlayerTap} style={{ flex: 1, padding: 14, borderRightWidth: 1, borderColor: HG.hairline, gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
+            {p ? <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={42} /> : null}
+            <View style={{ flex: 1 }}>
+              <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>
+                {p?.full_name ?? '—'}
+              </Text>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
+                {p?.ticker_handle ?? ''}
+              </Text>
+              {game ? (
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 0.4, marginTop: 4 }}>
+                  {game.away_team_abbreviation} @ {game.home_team_abbreviation}
+                </Text>
+              ) : null}
             </View>
-            <Text className="text-[#71717A] text-xs uppercase tracking-wide">{bet.status}</Text>
           </View>
-          <Text className="text-white font-bold">{bet.prop_type} · {formatCurrency(bet.wager_amount)}</Text>
+        </Pressable>
+
+        <View style={{ flex: 1, padding: 14, gap: 8 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+            {statLabel}
+          </Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 22, color: HG.ink, letterSpacing: -0.3 }}>
+            {Number(sidebet.line_value).toFixed(1)}
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 6 }}>
+            <ArrowChip label="OVER" lit={overSelected} />
+            <ArrowChip label="UNDER" lit={!overSelected} />
+          </View>
         </View>
-
-        {bet.result && (
-          <View
-            className="px-3 py-1.5 rounded-lg"
-            style={{ backgroundColor: isWon ? '#052e16' : isLost ? '#1c0505' : '#141414' }}
-          >
-            <Text
-              className="font-black text-sm"
-              style={{ color: isWon ? '#22C55E' : isLost ? '#EF4444' : '#71717A' }}
-            >
-              {isWon ? 'WON' : isLost ? 'LOST' : 'PUSH'}
-            </Text>
-          </View>
-        )}
       </View>
-    </TouchableOpacity>
-  );
-}
 
-function EmptyMarket({ onCreate }: { onCreate: () => void }) {
-  return (
-    <View className="items-center mt-16">
-      <Text className="text-4xl mb-3">💰</Text>
-      <Text className="text-white font-black text-lg mb-2">No open sidebets</Text>
-      <Text className="text-[#71717A] text-center mb-6">
-        Be the first to create a sidebet on a player prop.
-      </Text>
-      <TouchableOpacity onPress={onCreate} className="bg-[#F59E0B] px-8 py-3 rounded-xl">
-        <Text className="text-black font-black">CREATE SIDEBET</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, paddingTop: 12, borderTopWidth: 1, borderColor: HG.hairline }}>
+        <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+          <ReactionButton kind="like" count={sidebet.like_count ?? 0} active={myReaction === 'like'} onPress={onLike} />
+          <ReactionButton kind="dislike" count={sidebet.dislike_count ?? 0} active={myReaction === 'dislike'} onPress={onDislike} />
+          <Counter label="REPLIES" value={sidebet.comment_count ?? 0} />
+        </View>
+        <Pressable
+          onPress={onAccept}
+          disabled={isOwnPost}
+          style={{
+            height: 32, paddingHorizontal: 14, borderRadius: 999,
+            backgroundColor: isOwnPost ? HG.surface : HG.sky,
+            borderWidth: isOwnPost ? 1 : 0,
+            borderColor: HG.hairline,
+            alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: isOwnPost ? HG.muted : HG.jet, letterSpacing: 1, textTransform: 'uppercase' }}>
+            {isOwnPost ? 'Your take' : `Take ${overSelected ? 'UNDER' : 'OVER'}`}
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
-function EmptyMyBets({ onCreate }: { onCreate: () => void }) {
+function ReactionButton({
+  kind, count, active, onPress,
+}: { kind: 'like' | 'dislike'; count: number; active: boolean; onPress: () => void }) {
+  const tint = active ? HG.sky : HG.muted;
   return (
-    <View className="items-center mt-16">
-      <Text className="text-4xl mb-3">🎯</Text>
-      <Text className="text-white font-black text-lg mb-2">No sidebets yet</Text>
-      <Text className="text-[#71717A] text-center mb-6">
-        Create a bet or accept one from the market.
+    <Pressable onPress={onPress} hitSlop={8} style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={tint} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+        {kind === 'like' ? (
+          <Path d="M7 10v12M15 5.88 14 10h5.83a2 2 0 0 1 2 2.34l-1.42 9A2 2 0 0 1 18.43 23H7V10l4-9 1.46.5a2 2 0 0 1 1.34 2.45z" />
+        ) : (
+          <Path d="M17 14V2M9 18.12 10 14H4.17a2 2 0 0 1-2-2.34l1.42-9A2 2 0 0 1 5.57 1H17v13l-4 9-1.46-.5a2 2 0 0 1-1.34-2.45z" />
+        )}
+      </Svg>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: active ? HG.sky : HG.ink2 }}>
+        {count}
       </Text>
-      <TouchableOpacity onPress={onCreate} className="bg-[#F59E0B] px-8 py-3 rounded-xl">
-        <Text className="text-black font-black">CREATE SIDEBET</Text>
-      </TouchableOpacity>
+    </Pressable>
+  );
+}
+
+function ArrowChip({ label, lit }: { label: 'OVER' | 'UNDER'; lit: boolean }) {
+  return (
+    <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: lit ? HG.skySoft : 'transparent', borderWidth: 1, borderColor: lit ? HG.skyEdge : HG.hairline2, flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, letterSpacing: 0.6, color: lit ? HG.sky : HG.muted2 }}>
+        {label === 'OVER' ? '↑' : '↓'} {label}
+      </Text>
     </View>
   );
+}
+
+function Counter({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink2 }}>{value}</Text>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+    </View>
+  );
+}
+
+function labelForStat(category: string): string {
+  switch (category) {
+    case 'points': return 'PTS';
+    case 'rebounds': return 'REB';
+    case 'assists': return 'AST';
+    case 'steals': return 'STL';
+    case 'blocks': return 'BLK';
+    case 'turnovers': return 'TO';
+    case 'three_pointers': return '3PM';
+    case 'pts_reb_ast': return 'PTS + REB + AST';
+    case 'pts_reb': return 'PTS + REB';
+    case 'pts_ast': return 'PTS + AST';
+    case 'reb_ast': return 'REB + AST';
+    default: return category.toUpperCase();
+  }
 }

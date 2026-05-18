@@ -1,272 +1,264 @@
-import { ScrollView, View, Text, TouchableOpacity, RefreshControl, ActivityIndicator } from 'react-native';
+// =============================================================================
+// BETTHAT — Home (Holy Grail V2, Screen 03)
+// The hub. Live ticker, yesterday's breakout, trending players, tonight's games.
+// =============================================================================
+
+import { useMemo } from 'react';
+import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
+import Svg, { Path, Circle } from 'react-native-svg';
+
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { formatCurrency, formatFP } from '@/lib/utils';
-import type { TodayGame, Matchup } from '@/lib/database.types';
+import {
+  HG, FONT, fmtPrice, fmtPct, fmtFP, fmtTime,
+  priceDirectionColor, playerInitials, playerLastName,
+} from '@/lib/holygrail';
+import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
+import { Ticker, type TickerEntry } from '@/components/holygrail/Ticker';
+import { SectionHead } from '@/components/holygrail/SectionHead';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 export default function HomeScreen() {
   const router = useRouter();
   const { profile, wallet } = useAuthStore();
 
-  const { data: games, isLoading: gamesLoading, refetch: refetchGames } = useQuery({
-    queryKey: ['todays_games'],
+  const { data, isLoading, isRefetching, refetch } = useQuery({
+    queryKey: ['home', profile?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('mv_todays_games')
-        .select('*')
-        .order('tip_off_time', { ascending: true });
-      if (error) throw error;
-      return data as TodayGame[];
-    },
-    refetchInterval: 60_000, // refresh every minute
-  });
+      const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
 
-  const { data: activeMatchups, refetch: refetchMatchups } = useQuery({
-    queryKey: ['active_matchups', profile?.id],
-    queryFn: async () => {
-      if (!profile?.id) return [];
-      const { data, error } = await supabase
-        .from('matchups')
-        .select('*')
-        .or(`creator_id.eq.${profile.id},opponent_id.eq.${profile.id}`)
-        .in('status', ['pending', 'matched', 'live'])
-        .order('created_at', { ascending: false })
-        .limit(5);
-      if (error) throw error;
-      return data as Matchup[];
+      const [tickerQ, gamesQ, breakoutQ, trendingQ] = await Promise.all([
+        supabase
+          .from('player_prices')
+          .select(`
+            current_price, price_change_pct_24h,
+            nba_players!inner(ticker_handle, last_name)
+          `)
+          .order('demand_count_1h', { ascending: false })
+          .limit(20),
+
+        supabase
+          .from('nba_games')
+          .select('*')
+          .eq('game_date', today)
+          .order('tip_off_time', { ascending: true }),
+
+        supabase
+          .from('player_game_stats')
+          .select(`
+            fantasy_points, points, rebounds, assists,
+            nba_players!inner(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation),
+            nba_games!inner(game_date)
+          `)
+          .eq('nba_games.game_date', yesterday)
+          .order('fantasy_points', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+
+        supabase
+          .from('player_prices')
+          .select(`
+            player_id, current_price, price_change_pct_24h, demand_count_1h,
+            nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position)
+          `)
+          .order('demand_count_1h', { ascending: false })
+          .limit(8),
+      ]);
+
+      return {
+        ticker: tickerQ.data ?? [],
+        games: gamesQ.data ?? [],
+        breakout: breakoutQ.data,
+        trending: trendingQ.data ?? [],
+      };
     },
     enabled: !!profile?.id,
+    refetchInterval: 60_000,
   });
 
-  const { data: notifications } = useQuery({
-    queryKey: ['unread_notifications', profile?.id],
-    queryFn: async () => {
-      if (!profile?.id) return 0;
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', profile.id)
-        .eq('is_read', false);
-      return count ?? 0;
-    },
-    enabled: !!profile?.id,
-    refetchInterval: 30_000,
-  });
-
-  function handleRefresh() {
-    refetchGames();
-    refetchMatchups();
-  }
+  const tickerEntries = useMemo<TickerEntry[]>(
+    () =>
+      (data?.ticker ?? [])
+        .filter((t: any) => t.nba_players?.ticker_handle && t.price_change_pct_24h != null)
+        .map((t: any) => ({
+          ticker: t.nba_players.ticker_handle,
+          price: Number(t.current_price),
+          pctChange: Number(t.price_change_pct_24h ?? 0),
+        })),
+    [data?.ticker]
+  );
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      <ScreenHeader walletBalance={wallet?.balance} />
+      <Ticker entries={tickerEntries} />
+
       <ScrollView
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={gamesLoading}
-            onRefresh={handleRefresh}
-            tintColor="#F59E0B"
-          />
-        }
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
-        {/* ── Header ── */}
-        <View className="flex-row items-center justify-between px-5 pt-2 pb-4">
-          <View>
-            <Text className="text-[#71717A] text-sm">Welcome back,</Text>
-            <Text className="text-white text-xl font-black">
-              {profile?.display_name ?? profile?.username ?? '—'}
-            </Text>
-          </View>
-          <TouchableOpacity onPress={() => router.push('/notifications')} className="relative">
-            <Text className="text-2xl">🔔</Text>
-            {(notifications ?? 0) > 0 && (
-              <View className="absolute -top-1 -right-1 w-4 h-4 bg-[#F59E0B] rounded-full items-center justify-center">
-                <Text className="text-black text-[9px] font-bold">{notifications}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
+        {/* Hero — Yesterday's breakout */}
+        {isLoading ? (
+          <View style={{ padding: 80, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
+        ) : data?.breakout ? (
+          <BreakoutHero row={data.breakout} onPress={() => router.push(`/player/${(data.breakout as any).nba_players.id}` as any)} />
+        ) : null}
 
-        {/* ── Wallet Banner ── */}
-        <TouchableOpacity
-          onPress={() => router.push('/wallet')}
-          className="mx-5 bg-[#141414] border border-[#2E2E2E] rounded-2xl p-5 mb-5"
-        >
-          <View className="flex-row justify-between items-start">
-            <View>
-              <Text className="text-[#71717A] text-xs tracking-wider uppercase">Available Balance</Text>
-              <Text className="text-white text-3xl font-black mt-1">
-                {formatCurrency(wallet?.balance ?? 0)}
+        {/* Trending */}
+        {data?.trending && data.trending.length > 0 ? (
+          <>
+            <SectionHead word="" emphasis="Trending" emphasisFirst label="Last 4h" />
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18, gap: 12, paddingBottom: 4 }}
+            >
+              {data.trending.slice(0, 6).map((t: any) => {
+                const p = t.nba_players;
+                return (
+                  <Pressable
+                    key={t.player_id}
+                    onPress={() => router.push(`/player/${p.id}` as any)}
+                    style={{
+                      width: 168,
+                      padding: 14,
+                      backgroundColor: HG.surface,
+                      borderRadius: 16,
+                      borderWidth: 1,
+                      borderColor: HG.hairline,
+                      gap: 10,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={38} />
+                      <View style={{ flex: 1 }}>
+                        <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>
+                          {playerLastName(p)}
+                        </Text>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
+                          {p.ticker_handle ?? ''}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 16, color: HG.ink }}>{fmtPrice(t.current_price)}</Text>
+                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: priceDirectionColor(t.price_change_pct_24h) }}>
+                        {fmtPct(t.price_change_pct_24h)}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </>
+        ) : null}
+
+        {/* Active Games */}
+        <SectionHead word="Tonight's" emphasis="games" label={`${data?.games?.length ?? 0}`} />
+        <View style={{ paddingHorizontal: 18, gap: 8 }}>
+          {(data?.games ?? []).map((g: any) => (
+            <GameRow key={g.id} game={g} onPress={() => router.push('/(tabs)/lineup' as any)} />
+          ))}
+          {!isLoading && (data?.games ?? []).length === 0 ? (
+            <View style={{ padding: 24, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, alignItems: 'center' }}>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, textAlign: 'center' }}>
+                No games scheduled tonight.
               </Text>
-              {(wallet?.escrow_balance ?? 0) > 0 && (
-                <Text className="text-[#71717A] text-sm mt-1">
-                  {formatCurrency(wallet?.escrow_balance ?? 0)} in escrow
-                </Text>
-              )}
             </View>
-            <View className="items-end">
-              <View className="bg-[#F59E0B] rounded-lg px-3 py-1.5">
-                <Text className="text-black font-bold text-sm">DEPOSIT</Text>
-              </View>
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* ── Quick Enter ── */}
-        <View className="px-5 mb-6">
-          <Text className="text-white font-black text-lg mb-3">Quick Enter</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} className="-mx-0">
-            {(['$1', '$5', '$10', '$20', '$50'] as const).map((tier) => (
-              <TouchableOpacity
-                key={tier}
-                onPress={() => router.push({ pathname: '/lineup/build', params: { tier } })}
-                className="bg-[#141414] border border-[#2E2E2E] rounded-2xl mr-3 px-5 py-4 items-center min-w-[80px]"
-              >
-                <Text className="text-[#F59E0B] text-lg font-black">{tier}</Text>
-                <Text className="text-[#71717A] text-xs mt-1">entry</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* ── Today's Games ── */}
-        <View className="px-5 mb-6">
-          <Text className="text-white font-black text-lg mb-3">Today's Games</Text>
-          {gamesLoading ? (
-            <ActivityIndicator color="#F59E0B" />
-          ) : (games?.length ?? 0) === 0 ? (
-            <View className="bg-[#141414] rounded-2xl p-5 items-center">
-              <Text className="text-[#71717A]">No games scheduled today.</Text>
-            </View>
-          ) : (
-            games?.map((game) => <GameCard key={game.id} game={game} />)
-          )}
-        </View>
-
-        {/* ── Active Matchups ── */}
-        {(activeMatchups?.length ?? 0) > 0 && (
-          <View className="px-5 mb-6">
-            <View className="flex-row justify-between items-center mb-3">
-              <Text className="text-white font-black text-lg">Active Matchups</Text>
-              <TouchableOpacity onPress={() => router.push('/(tabs)/matchups')}>
-                <Text className="text-[#F59E0B] text-sm">See all</Text>
-              </TouchableOpacity>
-            </View>
-            {activeMatchups?.map((m) => (
-              <ActiveMatchupCard key={m.id} matchup={m} userId={profile?.id ?? ''} />
-            ))}
-          </View>
-        )}
-
-        {/* ── Stats Footer ── */}
-        <View className="mx-5 mb-8 bg-[#141414] border border-[#2E2E2E] rounded-2xl p-5">
-          <Text className="text-[#71717A] text-xs tracking-wider uppercase mb-3">Your Stats</Text>
-          <View className="flex-row justify-between">
-            <StatCell label="Wins" value={String(profile?.total_wins ?? 0)} color="#22C55E" />
-            <StatCell label="Losses" value={String(profile?.total_losses ?? 0)} color="#EF4444" />
-            <StatCell label="Win Rate" value={`${profile?.win_rate ?? 0}%`} color="#F59E0B" />
-            <StatCell label="Earnings" value={formatCurrency(profile?.total_earnings ?? 0)} color="#A855F7" />
-          </View>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-function GameCard({ game }: { game: TodayGame }) {
-  const isLive = game.status === 'live';
-  const isFinal = game.status === 'final';
-  const time = game.tip_off_time
-    ? new Date(game.tip_off_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
-    : '--:--';
-
+// =============================================================================
+// BREAKOUT HERO
+// =============================================================================
+function BreakoutHero({ row, onPress }: { row: any; onPress: () => void }) {
+  const p = row.nba_players;
   return (
-    <View className="bg-[#141414] border border-[#2E2E2E] rounded-2xl p-4 mb-3">
-      <View className="flex-row items-center justify-between">
-        {/* Away team */}
-        <View className="flex-1 items-center">
-          <Text className="text-white font-black text-lg">{game.away_team_abbreviation}</Text>
-          {(isFinal || isLive) && (
-            <Text className="text-white text-2xl font-black">{game.away_score}</Text>
-          )}
-        </View>
-
-        {/* Center info */}
-        <View className="items-center px-4">
-          {isLive ? (
-            <View className="flex-row items-center gap-1.5">
-              <View className="w-2 h-2 rounded-full bg-[#EF4444]" />
-              <Text className="text-[#EF4444] font-bold text-sm">LIVE</Text>
-            </View>
-          ) : isFinal ? (
-            <Text className="text-[#71717A] text-sm font-bold">FINAL</Text>
-          ) : (
-            <Text className="text-[#A1A1AA] text-sm">{time}</Text>
-          )}
-          <Text className="text-[#4B5563] text-xs mt-1">vs</Text>
-        </View>
-
-        {/* Home team */}
-        <View className="flex-1 items-center">
-          <Text className="text-white font-black text-lg">{game.home_team_abbreviation}</Text>
-          {(isFinal || isLive) && (
-            <Text className="text-white text-2xl font-black">{game.home_score}</Text>
-          )}
+    <Pressable onPress={onPress} style={{ marginHorizontal: 18, marginTop: 22, marginBottom: 8, padding: 24, borderRadius: 20, backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, overflow: 'hidden' }}>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 10 }}>
+        Yesterday's breakout
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+        <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={64} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 26, color: HG.ink, lineHeight: 30, letterSpacing: -0.4 }}>
+            {p.full_name}
+          </Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.sky, letterSpacing: 0.6, marginTop: 4 }}>
+            {p.ticker_handle ?? ''} · {p.team_abbreviation} · {p.position}
+          </Text>
         </View>
       </View>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, marginTop: 22 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 56, color: HG.ink, letterSpacing: -1 }}>
+          {fmtFP(row.fantasy_points)}
+        </Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.muted, letterSpacing: 0.4, textTransform: 'uppercase' }}>
+          fantasy total
+        </Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 18, marginTop: 12 }}>
+        <Stat label="PTS" value={String(row.points ?? 0)} />
+        <Stat label="REB" value={String(row.rebounds ?? 0)} />
+        <Stat label="AST" value={String(row.assists ?? 0)} />
+      </View>
+    </Pressable>
+  );
+}
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <View>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 16, color: HG.ink, marginTop: 2 }}>{value}</Text>
     </View>
   );
 }
 
-function ActiveMatchupCard({ matchup, userId }: { matchup: Matchup; userId: string }) {
-  const router = useRouter();
-  const isCreator = matchup.creator_id === userId;
-  const myScore = isCreator ? matchup.creator_score : matchup.opponent_score;
-  const oppScore = isCreator ? matchup.opponent_score : matchup.creator_score;
-  const isLive = matchup.status === 'live';
-
+// =============================================================================
+// GAME ROW
+// =============================================================================
+function GameRow({ game, onPress }: { game: any; onPress: () => void }) {
+  const live = game.status === 'live';
   return (
-    <TouchableOpacity
-      onPress={() => router.push(`/matchup/${matchup.id}`)}
-      className="bg-[#141414] border border-[#2E2E2E] rounded-2xl p-4 mb-3"
-    >
-      <View className="flex-row items-center justify-between">
-        <View>
-          <View className="flex-row items-center gap-2">
-            {isLive && (
-              <View className="flex-row items-center gap-1">
-                <View className="w-1.5 h-1.5 rounded-full bg-[#EF4444]" />
-                <Text className="text-[#EF4444] text-xs font-bold">LIVE</Text>
-              </View>
-            )}
-            <Text className="text-[#71717A] text-xs uppercase tracking-wide">
-              {matchup.entry_tier} matchup
+    <Pressable onPress={onPress} style={{ padding: 16, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 14, color: HG.ink, letterSpacing: 0.6 }}>
+            {game.away_team_abbreviation}
+          </Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>@</Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 14, color: HG.ink, letterSpacing: 0.6 }}>
+            {game.home_team_abbreviation}
+          </Text>
+        </View>
+        {live ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <View style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: HG.sky }} />
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky, letterSpacing: 0.8 }}>
+              LIVE Q{game.period} {game.game_clock}
             </Text>
           </View>
-          <Text className="text-white font-black text-xl mt-1">
-            {formatFP(myScore)} <Text className="text-[#71717A] font-medium text-base">vs</Text> {formatFP(oppScore)}
+        ) : game.status === 'final' ? (
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 0.8 }}>FINAL</Text>
+        ) : (
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 0.4 }}>
+            {fmtTime(game.tip_off_time)}
           </Text>
-        </View>
-        <View className="items-end">
-          <Text className="text-[#F59E0B] font-black text-lg">
-            {formatCurrency(matchup.pot)}
-          </Text>
-          <Text className="text-[#71717A] text-xs">pot</Text>
-        </View>
+        )}
       </View>
-    </TouchableOpacity>
-  );
-}
-
-function StatCell({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <View className="items-center">
-      <Text className="text-lg font-black" style={{ color }}>{value}</Text>
-      <Text className="text-[#71717A] text-xs mt-0.5">{label}</Text>
-    </View>
+      {(live || game.status === 'final') && game.home_score != null && game.away_score != null ? (
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 13, color: HG.ink2, marginTop: 6 }}>
+          {game.away_score}  —  {game.home_score}
+        </Text>
+      ) : null}
+    </Pressable>
   );
 }

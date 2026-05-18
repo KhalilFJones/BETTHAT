@@ -4,22 +4,10 @@ import {
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-
-const US_STATES = [
-  { code: 'AZ', name: 'Arizona' }, { code: 'CO', name: 'Colorado' },
-  { code: 'CT', name: 'Connecticut' }, { code: 'DE', name: 'Delaware' },
-  { code: 'FL', name: 'Florida' }, { code: 'IL', name: 'Illinois' },
-  { code: 'IN', name: 'Indiana' }, { code: 'IA', name: 'Iowa' },
-  { code: 'ME', name: 'Maine' }, { code: 'MD', name: 'Maryland' },
-  { code: 'MA', name: 'Massachusetts' }, { code: 'MI', name: 'Michigan' },
-  { code: 'MO', name: 'Missouri' }, { code: 'NV', name: 'Nevada' },
-  { code: 'NH', name: 'New Hampshire' }, { code: 'NJ', name: 'New Jersey' },
-  { code: 'OH', name: 'Ohio' }, { code: 'PA', name: 'Pennsylvania' },
-  { code: 'VA', name: 'Virginia' }, { code: 'WV', name: 'West Virginia' },
-  { code: 'DC', name: 'Washington D.C.' },
-];
+import type { StateRestriction } from '@/lib/database.types';
 
 type Step = 'username' | 'state' | 'age' | 'done';
 
@@ -34,13 +22,27 @@ export default function OnboardingScreen() {
   const [dob, setDob] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // H-20: drive states from state_restrictions, not a hard-coded list.
+  const { data: states } = useQuery({
+    queryKey: ['allowed_states'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('state_restrictions')
+        .select('*')
+        .eq('is_allowed', true)
+        .order('state_name');
+      if (error) throw error;
+      return (data ?? []) as StateRestriction[];
+    },
+    staleTime: 60 * 60_000,
+  });
+
   async function handleUsernameStep() {
     const clean = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
     if (clean.length < 3) {
       Alert.alert('Invalid Username', 'Username must be at least 3 characters (letters, numbers, underscores only).');
       return;
     }
-    // Check uniqueness
     const { data } = await supabase
       .from('profiles')
       .select('id')
@@ -54,7 +56,7 @@ export default function OnboardingScreen() {
     setStep('state');
   }
 
-  async function handleStateStep() {
+  function handleStateStep() {
     if (!selectedState) {
       Alert.alert('Select State', 'Please select your state to continue.');
       return;
@@ -63,16 +65,24 @@ export default function OnboardingScreen() {
   }
 
   async function handleAgeStep() {
-    // Validate DOB format MM/DD/YYYY
-    const dobRegex = /^(\d{2})\/(\d{2})\/(\d{4})$/;
-    const match = dob.match(dobRegex);
+    const match = dob.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
     if (!match) {
       Alert.alert('Invalid Date', 'Please enter date as MM/DD/YYYY.');
       return;
     }
-    const birthDate = new Date(`${match[3]}-${match[1]}-${match[2]}`);
-    const ageDiff = Date.now() - birthDate.getTime();
-    const age = Math.floor(ageDiff / (1000 * 60 * 60 * 24 * 365.25));
+    // H-21: construct in local time to avoid UTC midnight edge-case.
+    const m = Number(match[1]);
+    const d = Number(match[2]);
+    const y = Number(match[3]);
+    const birthDate = new Date(y, m - 1, d);
+
+    // Calendar-based age (whole years on the user's local clock).
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDelta = today.getMonth() - birthDate.getMonth();
+    if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+      age -= 1;
+    }
     if (age < 18) {
       Alert.alert('Age Requirement', 'You must be 18 or older to play BETTHAT.');
       return;
@@ -84,18 +94,40 @@ export default function OnboardingScreen() {
     if (!user) return;
     setLoading(true);
     try {
+      // H-18: record terms acceptance + version on profile.
+      const { data: terms } = await supabase
+        .from('app_config')
+        .select('value')
+        .eq('key', 'terms_version')
+        .maybeSingle();
+
       const { data, error } = await supabase
         .from('profiles')
         .update({
           username,
           display_name: displayName.trim() || username,
           state: selectedState,
+          date_of_birth: birthDate.toISOString().split('T')[0],
+          terms_accepted_at: new Date().toISOString(),
+          terms_version: (terms?.value as string | undefined) ?? '1.0',
+          onboarding_step: 'complete',
         })
         .eq('id', user.id)
         .select()
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) throw new Error('Profile not found');
+
+      // H-18: capture IP + UA + terms version server-side. Fire-and-forget —
+      // signup completes even if the audit insert fails (it's a write-side
+      // ledger, not a blocker), but failures are logged via Sentry.
+      supabase.functions.invoke('signup-audit', {
+        body: { terms_version: (terms?.value as string | undefined) ?? '1.0' },
+      }).catch((err) => {
+        // eslint-disable-next-line no-console
+        console.warn('[signup-audit] failed:', err);
+      });
 
       setProfile(data);
       setStep('done');
@@ -107,40 +139,35 @@ export default function OnboardingScreen() {
     }
   }
 
-  // ─── Step: Username ───────────────────────────────────────────
   if (step === 'username') {
     return (
       <KeyboardAvoidingView
-        className="flex-1 bg-[#0a0a0a]"
+        className="flex-1 bg-bg"
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View className="flex-1 px-6 pt-20">
           <StepIndicator current={0} total={3} />
-          <Text className="text-white text-3xl font-black mb-2 mt-8">
-            Pick your username
-          </Text>
-          <Text className="text-[#71717A] mb-8">
-            This is how other players will see you.
-          </Text>
+          <Text className="text-text-primary text-3xl font-bold mb-2 mt-8">Pick your username</Text>
+          <Text className="text-text-muted mb-8 font-sans">This is how other players will see you.</Text>
 
           <TextInput
-            className="bg-[#141414] border border-[#2E2E2E] rounded-xl px-4 py-4 text-white text-lg"
+            className="bg-surface border border-surface-border rounded-xl px-4 py-4 text-text-primary text-lg"
             placeholder="e.g. hoops_king21"
-            placeholderTextColor="#4B5563"
+            placeholderTextColor="#71717A"
             autoCapitalize="none"
             autoCorrect={false}
             maxLength={20}
             value={username}
             onChangeText={setUsername}
           />
-          <Text className="text-[#4B5563] text-xs mt-2">
+          <Text className="text-text-muted text-xs mt-2 font-sans">
             Letters, numbers, underscores. 3–20 characters.
           </Text>
 
           <TextInput
-            className="bg-[#141414] border border-[#2E2E2E] rounded-xl px-4 py-4 text-white text-lg mt-4"
+            className="bg-surface border border-surface-border rounded-xl px-4 py-4 text-text-primary text-lg mt-4"
             placeholder="Display name (optional)"
-            placeholderTextColor="#4B5563"
+            placeholderTextColor="#71717A"
             maxLength={30}
             value={displayName}
             onChangeText={setDisplayName}
@@ -148,38 +175,35 @@ export default function OnboardingScreen() {
 
           <TouchableOpacity
             onPress={handleUsernameStep}
-            className="mt-8 bg-[#F59E0B] rounded-xl py-4 items-center"
+            className="mt-8 bg-brand rounded-xl py-4 items-center"
           >
-            <Text className="text-black font-bold text-base">CONTINUE</Text>
+            <Text className="text-bg font-bold text-base">CONTINUE</Text>
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
     );
   }
 
-  // ─── Step: State ─────────────────────────────────────────────
   if (step === 'state') {
     return (
-      <View className="flex-1 bg-[#0a0a0a] px-6 pt-20">
+      <View className="flex-1 bg-bg px-6 pt-20">
         <StepIndicator current={1} total={3} />
-        <Text className="text-white text-3xl font-black mb-2 mt-8">
-          Where are you located?
-        </Text>
-        <Text className="text-[#71717A] mb-6">
+        <Text className="text-text-primary text-3xl font-bold mb-2 mt-8">Where are you located?</Text>
+        <Text className="text-text-muted mb-6 font-sans">
           BETTHAT is available in these states. Select yours.
         </Text>
 
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          {US_STATES.map((s) => (
+          {(states ?? []).map((s) => (
             <TouchableOpacity
-              key={s.code}
-              onPress={() => setSelectedState(s.code)}
-              className="flex-row items-center justify-between py-3.5 border-b border-[#1E1E1E]"
+              key={s.state_code}
+              onPress={() => setSelectedState(s.state_code)}
+              className="flex-row items-center justify-between py-3.5 border-b border-surface-border"
             >
-              <Text className="text-white text-base">{s.name}</Text>
-              {selectedState === s.code && (
-                <View className="w-5 h-5 rounded-full bg-[#F59E0B] items-center justify-center">
-                  <Text className="text-black text-xs font-bold">✓</Text>
+              <Text className="text-text-primary text-base">{s.state_name}</Text>
+              {selectedState === s.state_code && (
+                <View className="w-5 h-5 rounded-full bg-brand items-center justify-center">
+                  <Text className="text-bg text-xs font-bold">✓</Text>
                 </View>
               )}
             </TouchableOpacity>
@@ -190,38 +214,35 @@ export default function OnboardingScreen() {
         <TouchableOpacity
           onPress={handleStateStep}
           disabled={!selectedState}
-          className="mb-8 bg-[#F59E0B] rounded-xl py-4 items-center"
+          className="mb-8 bg-brand rounded-xl py-4 items-center"
           style={{ opacity: selectedState ? 1 : 0.4 }}
         >
-          <Text className="text-black font-bold text-base">CONTINUE</Text>
+          <Text className="text-bg font-bold text-base">CONTINUE</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // ─── Step: Age ───────────────────────────────────────────────
   if (step === 'age') {
     return (
       <KeyboardAvoidingView
-        className="flex-1 bg-[#0a0a0a]"
+        className="flex-1 bg-bg"
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <View className="flex-1 px-6 pt-20">
           <StepIndicator current={2} total={3} />
-          <Text className="text-white text-3xl font-black mb-2 mt-8">
-            Verify your age
-          </Text>
-          <Text className="text-[#71717A] mb-8">
-            You must be 18 or older to play. We take this seriously.
+          <Text className="text-text-primary text-3xl font-bold mb-2 mt-8">Verify your age</Text>
+          <Text className="text-text-muted mb-8 font-sans">
+            You must be 18 or older to play. By continuing, you accept our Terms of Service and Privacy Policy.
           </Text>
 
-          <Text className="text-[#A1A1AA] text-xs font-medium mb-2 tracking-wider uppercase">
+          <Text className="text-text-secondary text-xs font-medium mb-2 tracking-wider uppercase font-sans">
             Date of Birth
           </Text>
           <TextInput
-            className="bg-[#141414] border border-[#2E2E2E] rounded-xl px-4 py-4 text-white text-lg"
+            className="bg-surface border border-surface-border rounded-xl px-4 py-4 text-text-primary text-lg font-mono"
             placeholder="MM/DD/YYYY"
-            placeholderTextColor="#4B5563"
+            placeholderTextColor="#71717A"
             keyboardType="numbers-and-punctuation"
             maxLength={10}
             value={dob}
@@ -231,12 +252,12 @@ export default function OnboardingScreen() {
           <TouchableOpacity
             onPress={handleAgeStep}
             disabled={loading}
-            className="mt-8 bg-[#F59E0B] rounded-xl py-4 items-center"
+            className="mt-8 bg-brand rounded-xl py-4 items-center"
             style={{ opacity: loading ? 0.7 : 1 }}
           >
             {loading
-              ? <ActivityIndicator color="#000" />
-              : <Text className="text-black font-bold text-base">CONFIRM & ENTER</Text>
+              ? <ActivityIndicator color="#0A0A0C" />
+              : <Text className="text-bg font-bold text-base">CONFIRM & ENTER</Text>
             }
           </TouchableOpacity>
         </View>
@@ -244,12 +265,10 @@ export default function OnboardingScreen() {
     );
   }
 
-  // ─── Step: Done ──────────────────────────────────────────────
   return (
-    <View className="flex-1 bg-[#0a0a0a] items-center justify-center px-6">
-      <Text className="text-6xl mb-4">🏀</Text>
-      <Text className="text-white text-3xl font-black mb-2">You're in!</Text>
-      <Text className="text-[#F59E0B] text-lg font-medium">Welcome to BETTHAT</Text>
+    <View className="flex-1 bg-bg items-center justify-center px-6">
+      <Text className="text-text-primary text-3xl font-bold mb-2">You're in</Text>
+      <Text className="text-brand text-lg font-medium font-sans">Welcome to BETTHAT</Text>
     </View>
   );
 }
@@ -261,7 +280,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
         <View
           key={i}
           className="h-1 flex-1 rounded-full"
-          style={{ backgroundColor: i <= current ? '#F59E0B' : '#2E2E2E' }}
+          style={{ backgroundColor: i <= current ? '#F5A524' : '#2A2A2E' }}
         />
       ))}
     </View>

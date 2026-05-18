@@ -1,301 +1,672 @@
-import { useState, useCallback } from 'react';
+// =============================================================================
+// BETTHAT — Player Market (Holy Grail V2, Screen 04)
+// The trading floor. Browse every player playing tonight, watch prices move,
+// build a lineup of 3 within the $500 cap.
+// =============================================================================
+
+import { useMemo, useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput,
-  ActivityIndicator, FlatList,
+  View, Text, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery } from '@tanstack/react-query';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import Svg, { Path } from 'react-native-svg';
+
 import { supabase } from '@/lib/supabase';
-import { useLineupStore } from '@/stores/lineup.store';
-import { formatCurrency, formatStatLine, TIER_CAPS, TIER_COLORS, salaryColor, truncateName } from '@/lib/utils';
-import type { PlayerMarket } from '@/lib/database.types';
+import { useAuthStore } from '@/stores/auth.store';
+import {
+  HG, FONT, fmtPrice, fmtPct, priceDirectionColor,
+  playerInitials, playerLastName, SALARY_CAP, LINEUP_SIZE,
+} from '@/lib/holygrail';
+import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
+import { Ticker, type TickerEntry } from '@/components/holygrail/Ticker';
+import { SectionHead } from '@/components/holygrail/SectionHead';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
+import { Sparkline } from '@/components/holygrail/Sparkline';
+import {
+  usePlayerMarket,
+  type PlayerMarketRow,
+  type TrendingRow,
+  type InProgressLineup,
+} from '@/hooks/holygrail/usePlayerMarket';
+import { recomputeLineupCap } from '@/hooks/holygrail/lineupOps';
 
-const POSITIONS = ['ALL', 'PG', 'SG', 'SF', 'PF', 'C'];
-const TIERS = ['ALL', 'budget', 'mid', 'star', 'superstar'] as const;
+const POSITIONS = ['ALL', 'PG', 'SG', 'SF', 'PF', 'C'] as const;
+type Position = (typeof POSITIONS)[number];
 
-export default function LineupScreen() {
+// Price filter buckets — UI only. Values are inclusive lower / exclusive upper.
+const PRICE_BUCKETS = [
+  { key: 'any',     label: 'Any',         lo: 0,   hi: Infinity },
+  { key: 'lt50',    label: 'Under $50',   lo: 0,   hi: 50 },
+  { key: '50to100', label: '$50–$100',    lo: 50,  hi: 100 },
+  { key: '100to150',label: '$100–$150',   lo: 100, hi: 150 },
+  { key: 'gt150',   label: 'Over $150',   lo: 150, hi: Infinity },
+] as const;
+type PriceBucketKey = (typeof PRICE_BUCKETS)[number]['key'];
+
+export default function PlayerMarketScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ tier?: string }>();
+  const qc = useQueryClient();
+  const { profile, wallet } = useAuthStore();
+  const userId = profile?.id;
 
-  const { tier, salaryCap, slots, totalSalary, remainingSalary, setTier, addPlayer, removePlayer, reset } = useLineupStore();
+  const { data, isLoading, isRefetching, refetch } = usePlayerMarket(userId);
 
-  const [selectedPosition, setSelectedPosition] = useState('ALL');
-  const [selectedTierFilter, setSelectedTierFilter] = useState<typeof TIERS[number]>('ALL');
+  const [position, setPosition] = useState<Position>('ALL');
+  const [priceBucket, setPriceBucket] = useState<PriceBucketKey>('any');
   const [search, setSearch] = useState('');
-  const [pickingSlot, setPickingSlot] = useState<string | null>(null); // which position slot is being filled
 
-  // If tier param passed (from Home quick enter), set it
-  useState(() => {
-    if (params.tier && !tier) {
-      const t = params.tier as '$1' | '$5' | '$10' | '$20' | '$50';
-      setTier(t, TIER_CAPS[t]);
-    }
-  });
+  const lineup = data?.lineup ?? null;
+  const pickedIds = useMemo(() => {
+    const s = new Set<string>();
+    if (lineup) for (const lp of lineup.lineup_players) s.add(lp.nba_players.id);
+    return s;
+  }, [lineup]);
 
-  const { data: players, isLoading } = useQuery({
-    queryKey: ['player_market'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('mv_player_market')
-        .select('*')
-        .eq('is_active', true)
-        .order('current_price', { ascending: false });
+  // Filter + sort
+  const players = useMemo(() => {
+    if (!data?.tonight) return [];
+    const q = search.trim().toLowerCase();
+    const bucket = PRICE_BUCKETS.find((b) => b.key === priceBucket)!;
+    return data.tonight
+      .filter((p) => p.player_prices != null)
+      .filter((p) => {
+        if (position !== 'ALL' && p.position !== position) return false;
+        if (q && !`${p.full_name} ${p.ticker_handle} ${p.team_abbreviation}`.toLowerCase().includes(q)) return false;
+        const price = Number(p.player_prices!.current_price);
+        if (price < bucket.lo || price >= bucket.hi) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const al = a.player_prices!.is_locked ? 1 : 0;
+        const bl = b.player_prices!.is_locked ? 1 : 0;
+        if (al !== bl) return al - bl;
+        return Number(b.player_prices!.current_price) - Number(a.player_prices!.current_price);
+      });
+  }, [data?.tonight, position, priceBucket, search]);
+
+  // Ticker = top 16 absolute movers in tonight's slate
+  const tickerEntries = useMemo<TickerEntry[]>(() => {
+    if (!data?.tonight) return [];
+    return data.tonight
+      .filter((p) => p.player_prices?.price_change_pct_24h != null)
+      .map((p) => ({
+        ticker: p.ticker_handle || playerLastName(p).toUpperCase(),
+        price: Number(p.player_prices!.current_price),
+        pctChange: Number(p.player_prices!.price_change_pct_24h ?? 0),
+      }))
+      .sort((a, b) => Math.abs(b.pctChange) - Math.abs(a.pctChange))
+      .slice(0, 16);
+  }, [data?.tonight]);
+
+  // Add / remove player mutation
+  const addMutation = useMutation({
+    mutationFn: async (vars: { player: PlayerMarketRow; price: number }) => {
+      if (!userId) throw new Error('Not signed in');
+      const lineupId = await ensureBuildingLineup(userId, lineup);
+      const usedSlots = new Set((lineup?.lineup_players ?? []).map((lp) => lp.slot_number));
+      const nextSlot = [1, 2, 3].find((n) => !usedSlots.has(n));
+      if (!nextSlot) throw new Error('Lineup full');
+      const { error } = await supabase.from('lineup_players').insert({
+        lineup_id: lineupId,
+        player_id: vars.player.id,
+        slot_number: nextSlot,
+        frozen_price: vars.price,
+      });
       if (error) throw error;
-      return data as PlayerMarket[];
+      // Always sum from the source of truth — never math on stale cache.
+      await recomputeLineupCap(lineupId);
     },
-    staleTime: 30_000,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['player-market'] }),
   });
 
-  const filteredPlayers = players?.filter((p) => {
-    if (selectedPosition !== 'ALL' && p.position !== selectedPosition) return false;
-    if (selectedTierFilter !== 'ALL' && p.salary_tier !== selectedTierFilter) return false;
-    if (search && !p.full_name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  }) ?? [];
+  const removeMutation = useMutation({
+    mutationFn: async (playerId: string) => {
+      if (!lineup) return;
+      const { error } = await supabase
+        .from('lineup_players')
+        .delete()
+        .eq('lineup_id', lineup.id)
+        .eq('player_id', playerId);
+      if (error) throw error;
+      await recomputeLineupCap(lineup.id);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['player-market'] }),
+  });
 
-  const filledSlots = slots.filter((s) => s.playerId !== null).length;
-  const isComplete = filledSlots === 5;
-
-  async function handleSubmitLineup() {
-    if (!isComplete || !tier) return;
-    // Navigate to matchup creation with this lineup
-    router.push({ pathname: '/matchup/create', params: { tier } });
-  }
-
-  // ─── Tier picker (if no tier selected yet) ───────────────────
-  if (!tier) {
-    return (
-      <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
-        <View className="px-5 pt-4 pb-6">
-          <Text className="text-white text-2xl font-black mb-1">Build Lineup</Text>
-          <Text className="text-[#71717A]">Choose your entry tier to start.</Text>
-        </View>
-        <ScrollView className="px-5">
-          {(['$1', '$5', '$10', '$20', '$50'] as const).map((t) => (
-            <TouchableOpacity
-              key={t}
-              onPress={() => setTier(t, TIER_CAPS[t])}
-              className="bg-[#141414] border border-[#2E2E2E] rounded-2xl p-5 mb-4"
-            >
-              <View className="flex-row items-center justify-between">
-                <View>
-                  <Text className="text-[#F59E0B] text-2xl font-black">{t} Entry</Text>
-                  <Text className="text-[#71717A] text-sm mt-1">
-                    Salary Cap: ${TIER_CAPS[t]}
-                  </Text>
-                </View>
-                <View className="items-end">
-                  <Text className="text-white font-black text-xl">
-                    {formatCurrency(Number(t.slice(1)) * 2 * 0.965)}
-                  </Text>
-                  <Text className="text-[#71717A] text-xs">win prize</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
+  const picked = lineup?.lineup_players ?? [];
+  const isFull = picked.length >= LINEUP_SIZE;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
-      {/* ── Header ── */}
-      <View className="px-5 pt-4 pb-2">
-        <View className="flex-row items-center justify-between mb-1">
-          <Text className="text-white text-xl font-black">{tier} Lineup</Text>
-          <TouchableOpacity onPress={reset}>
-            <Text className="text-[#71717A] text-sm">Reset</Text>
-          </TouchableOpacity>
-        </View>
-        {/* Salary cap bar */}
-        <View className="flex-row items-center gap-3">
-          <View className="flex-1 h-2 bg-[#1E1E1E] rounded-full overflow-hidden">
-            <View
-              className="h-full rounded-full"
-              style={{
-                width: `${Math.min((totalSalary / salaryCap) * 100, 100)}%`,
-                backgroundColor: salaryColor(remainingSalary, salaryCap),
-              }}
-            />
-          </View>
-          <Text className="text-white text-sm font-bold" style={{ color: salaryColor(remainingSalary, salaryCap) }}>
-            ${remainingSalary} left
-          </Text>
-        </View>
-      </View>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      <ScreenHeader walletBalance={wallet?.balance} />
+      <Ticker entries={tickerEntries} />
 
-      {/* ── Lineup Slots ── */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} className="px-5 py-3" style={{ maxHeight: 100 }}>
-        {slots.map((slot) => (
-          <TouchableOpacity
-            key={slot.position}
-            onPress={() => {
-              if (slot.playerId) {
-                removePlayer(slot.position);
-              } else {
-                setPickingSlot(slot.position);
-              }
-            }}
-            className="mr-3 items-center"
-          >
-            <View
-              className="w-14 h-14 rounded-xl border-2 items-center justify-center"
-              style={{
-                borderColor: slot.playerId ? '#F59E0B' : pickingSlot === slot.position ? '#F59E0B' : '#2E2E2E',
-                backgroundColor: slot.playerId ? '#1a1a0a' : '#141414',
-              }}
-            >
-              {slot.playerId ? (
-                <Text className="text-white text-xs font-bold text-center" numberOfLines={2}>
-                  {truncateName(slot.playerName ?? '', 8)}
-                </Text>
-              ) : (
-                <Text className="text-[#4B5563] font-bold text-sm">{slot.position}</Text>
-              )}
-            </View>
-            <Text className="text-[#71717A] text-[10px] mt-1">{slot.position}</Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* ── Filters ── */}
-      <View className="px-5 pb-2">
-        {/* Search */}
-        <TextInput
-          className="bg-[#141414] border border-[#2E2E2E] rounded-xl px-4 py-2.5 text-white text-sm mb-2"
-          placeholder="Search players..."
-          placeholderTextColor="#4B5563"
-          value={search}
-          onChangeText={setSearch}
-        />
-        {/* Position filter */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {POSITIONS.map((pos) => (
-            <TouchableOpacity
-              key={pos}
-              onPress={() => setSelectedPosition(pos)}
-              className="mr-2 px-3 py-1.5 rounded-full border"
-              style={{
-                borderColor: selectedPosition === pos ? '#F59E0B' : '#2E2E2E',
-                backgroundColor: selectedPosition === pos ? '#1a1400' : 'transparent',
-              }}
-            >
-              <Text
-                className="text-xs font-bold"
-                style={{ color: selectedPosition === pos ? '#F59E0B' : '#71717A' }}
+      <FlatList
+        data={players}
+        keyExtractor={(p) => p.id}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefetching}
+            onRefresh={refetch}
+            tintColor={HG.sky}
+            colors={[HG.sky]}
+          />
+        }
+        ListHeaderComponent={
+          <View>
+            {/* Search */}
+            <View style={{ paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  height: 44,
+                  paddingHorizontal: 14,
+                  gap: 10,
+                  backgroundColor: HG.inputBg,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: HG.hairline,
+                }}
               >
-                {pos}
+                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={HG.muted} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14z" />
+                  <Path d="m21 21-4.3-4.3" />
+                </Svg>
+                <TextInput
+                  value={search}
+                  onChangeText={setSearch}
+                  placeholder="Search players or tickers"
+                  placeholderTextColor={HG.muted}
+                  style={{
+                    flex: 1,
+                    color: HG.ink,
+                    fontFamily: FONT.sans,
+                    fontSize: 14,
+                    height: '100%',
+                    padding: 0,
+                  }}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
+
+            {/* Position chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 6, gap: 8 }}
+            >
+              {POSITIONS.map((p) => {
+                const active = position === p;
+                return (
+                  <Pressable
+                    key={p}
+                    onPress={() => setPosition(p)}
+                    style={{
+                      height: 32,
+                      paddingHorizontal: 14,
+                      borderRadius: 999,
+                      backgroundColor: active ? HG.sky : HG.surface,
+                      borderWidth: 1,
+                      borderColor: active ? HG.sky : HG.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: active ? FONT.monoBold : FONT.monoMedium,
+                        fontSize: 11,
+                        letterSpacing: 0.9,
+                        color: active ? HG.jet : HG.muted,
+                      }}
+                    >
+                      {p === 'ALL' ? 'All' : p}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Price filter chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 6, gap: 8 }}
+            >
+              {PRICE_BUCKETS.map((b) => {
+                const active = priceBucket === b.key;
+                return (
+                  <Pressable
+                    key={b.key}
+                    onPress={() => setPriceBucket(b.key)}
+                    style={{
+                      height: 28,
+                      paddingHorizontal: 12,
+                      borderRadius: 999,
+                      backgroundColor: active ? HG.skySoft : 'transparent',
+                      borderWidth: 1,
+                      borderColor: active ? HG.skyEdge : HG.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      gap: 4,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: active ? FONT.monoBold : FONT.monoMedium,
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        color: active ? HG.sky : HG.muted,
+                      }}
+                    >
+                      {b.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Trending carousel */}
+            {data?.trending && data.trending.length > 0 && position === 'ALL' && !search ? (
+              <>
+                <SectionHead word="" emphasis="Trending" emphasisFirst label="Last 4h" />
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ paddingHorizontal: 18, gap: 12, paddingBottom: 4 }}
+                >
+                  {data.trending.slice(0, 6).map((t) => (
+                    <TrendCard key={t.player_id} row={t} onPress={() => router.push(`/player/${t.player_id}` as any)} />
+                  ))}
+                </ScrollView>
+              </>
+            ) : null}
+
+            <SectionHead word="Playing" emphasis="Tonight" label={`${players.length} players`} />
+          </View>
+        }
+        renderItem={({ item }) => (
+          <PlayerRow
+            player={item}
+            sparkPrices={data?.history.get(item.id) ?? []}
+            isPicked={pickedIds.has(item.id)}
+            disabled={isFull && !pickedIds.has(item.id)}
+            onAdd={() => addMutation.mutate({ player: item, price: Number(item.player_prices!.current_price) })}
+            onRemove={() => removeMutation.mutate(item.id)}
+            onTap={() => router.push(`/player/${item.id}` as any)}
+          />
+        )}
+        contentContainerStyle={{ paddingBottom: lineup && picked.length > 0 ? 240 : 60 }}
+        ListEmptyComponent={
+          isLoading ? (
+            <View style={{ padding: 60, alignItems: 'center' }}>
+              <ActivityIndicator color={HG.sky} />
+            </View>
+          ) : (
+            <View style={{ padding: 60 }}>
+              <Text style={{ color: HG.muted, fontFamily: FONT.sans, fontSize: 13, textAlign: 'center' }}>
+                No players match your filter.
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+            </View>
+          )
+        }
+      />
 
-      {/* ── Player List ── */}
-      {isLoading ? (
-        <ActivityIndicator color="#F59E0B" className="mt-8" />
-      ) : (
-        <FlatList
-          data={filteredPlayers}
-          keyExtractor={(item) => item.player_id}
-          renderItem={({ item }) => (
-            <PlayerRow
-              player={item}
-              salaryCap={salaryCap}
-              remainingSalary={remainingSalary}
-              pickingSlot={pickingSlot}
-              isSelected={slots.some((s) => s.playerId === item.player_id)}
-              onSelect={(player) => {
-                if (!pickingSlot) return;
-                addPlayer({
-                  position: pickingSlot,
-                  playerId: player.player_id,
-                  playerName: player.full_name,
-                  price: player.current_price ?? 0,
-                });
-                setPickingSlot(null);
-              }}
-            />
-          )}
-          contentContainerStyle={{ paddingBottom: 100 }}
+      {/* Sticky lineup builder */}
+      {picked.length > 0 ? (
+        <StickyLineupBar
+          lineup={lineup}
+          onPlaceOrder={() => router.push('/matchup/create' as any)}
+          onRemove={(playerId) => removeMutation.mutate(playerId)}
         />
-      )}
-
-      {/* ── Submit CTA ── */}
-      {isComplete && (
-        <View className="absolute bottom-0 left-0 right-0 p-5 bg-[#0a0a0a] border-t border-[#1E1E1E]">
-          <TouchableOpacity
-            onPress={handleSubmitLineup}
-            className="bg-[#F59E0B] rounded-xl py-4 items-center"
-          >
-            <Text className="text-black font-black text-base">
-              ENTER MATCHUP — {tier}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      ) : null}
     </SafeAreaView>
   );
 }
 
-function PlayerRow({
-  player, salaryCap, remainingSalary, pickingSlot, isSelected, onSelect,
-}: {
-  player: PlayerMarket;
-  salaryCap: number;
-  remainingSalary: number;
-  pickingSlot: string | null;
-  isSelected: boolean;
-  onSelect: (p: PlayerMarket) => void;
-}) {
-  const price = player.current_price ?? 0;
-  const canAfford = price <= remainingSalary;
-  const tierColor = TIER_COLORS[player.salary_tier ?? 'budget'];
+// =============================================================================
+// HELPERS
+// =============================================================================
 
+async function ensureBuildingLineup(userId: string, existing: InProgressLineup | null): Promise<string> {
+  if (existing?.id) return existing.id;
+  // Create a new in-progress lineup. entry_tier is the legacy NOT NULL column;
+  // populate with placeholder 25 since max_wager is the authoritative source.
+  const { data, error } = await supabase
+    .from('lineups')
+    .insert({
+      user_id: userId,
+      entry_tier: 25,
+      status: 'building',
+      total_cap_used: 0,
+      game_date: new Date().toISOString().slice(0, 10),
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+// =============================================================================
+// TRENDING CARD
+// =============================================================================
+
+function TrendCard({ row, onPress }: { row: TrendingRow; onPress: () => void }) {
+  const p = row.nba_players;
+  const dir = priceDirectionColor(row.price_change_pct_24h);
   return (
-    <TouchableOpacity
-      onPress={() => {
-        if (!pickingSlot || !canAfford || isSelected) return;
-        onSelect(player);
+    <Pressable
+      onPress={onPress}
+      style={{
+        width: 168,
+        padding: 14,
+        backgroundColor: HG.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: HG.hairline,
+        gap: 10,
       }}
-      className="flex-row items-center px-5 py-3 border-b border-[#141414]"
-      style={{ opacity: (pickingSlot && !canAfford) || isSelected ? 0.5 : 1 }}
     >
-      {/* Tier color indicator */}
-      <View className="w-1 h-10 rounded-full mr-3" style={{ backgroundColor: tierColor }} />
-
-      {/* Player info */}
-      <View className="flex-1">
-        <View className="flex-row items-center gap-2">
-          <Text className="text-white font-bold text-base">{truncateName(player.full_name, 18)}</Text>
-          {player.is_injured && (
-            <View className="bg-[#EF4444] rounded px-1.5 py-0.5">
-              <Text className="text-white text-[9px] font-bold">OUT</Text>
-            </View>
-          )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={38} />
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink, lineHeight: 16 }}>
+            {playerLastName(p)}
+          </Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
+            {p.ticker_handle ?? ''}
+          </Text>
         </View>
-        <Text className="text-[#71717A] text-xs mt-0.5">
-          {player.position} · {player.team_abbr ?? '—'} ·{' '}
-          {formatStatLine(player.points_per_game, player.reb_per_game, player.assists_per_game)} avg
+      </View>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 16, color: HG.ink }}>
+          {fmtPrice(row.current_price)}
+        </Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: dir }}>
+          {fmtPct(row.price_change_pct_24h)}
         </Text>
       </View>
+    </Pressable>
+  );
+}
 
-      {/* Price */}
-      <View className="items-end ml-3">
-        <Text className="text-white font-black text-base">${price}</Text>
-        {player.fantasy_pts_pg != null && (
-          <Text className="text-[#71717A] text-xs">{player.fantasy_pts_pg.toFixed(1)} fp/g</Text>
-        )}
+// =============================================================================
+// PLAYER ROW
+// =============================================================================
+
+function PlayerRow({
+  player, sparkPrices, isPicked, disabled, onAdd, onRemove, onTap,
+}: {
+  player: PlayerMarketRow;
+  sparkPrices: number[];
+  isPicked: boolean;
+  disabled: boolean;
+  onAdd: () => void;
+  onRemove: () => void;
+  onTap: () => void;
+}) {
+  const pp = player.player_prices!;
+  const isLocked = pp.is_locked;
+  const dirColor = priceDirectionColor(pp.price_change_pct_24h);
+  const addLabel = isLocked ? 'Out' : isPicked ? 'Added' : '+ Add';
+  const addState: 'add' | 'added' | 'locked' = isLocked ? 'locked' : isPicked ? 'added' : 'add';
+
+  return (
+    <Pressable
+      onPress={onTap}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 18,
+        paddingVertical: 14,
+        borderTopWidth: 1,
+        borderColor: HG.hairline,
+        opacity: isLocked ? 0.55 : 1,
+      }}
+    >
+      <MonogramTile initials={playerInitials(player)} jersey={player.jersey_number} size={52} />
+
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text
+            numberOfLines={1}
+            style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: HG.ink, flexShrink: 1 }}
+          >
+            {player.full_name}
+          </Text>
+          {isLocked ? (
+            <View style={{ backgroundColor: HG.downSoft, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: HG.down, letterSpacing: 0.6 }}>OUT</Text>
+            </View>
+          ) : null}
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 3 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4 }}>
+            {player.ticker_handle ?? ''}
+          </Text>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted }}>
+            {player.team_abbreviation} · {player.position}
+          </Text>
+        </View>
       </View>
 
-      {/* Selected checkmark */}
-      {isSelected && (
-        <View className="ml-2 w-6 h-6 rounded-full bg-[#F59E0B] items-center justify-center">
-          <Text className="text-black font-black text-xs">✓</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+        <Sparkline prices={sparkPrices} width={48} height={20} />
+        <View style={{ alignItems: 'flex-end', minWidth: 56 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 16, color: HG.ink }}>{fmtPrice(pp.current_price)}</Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: dirColor, marginTop: 1 }}>
+            {fmtPct(pp.price_change_pct_24h)}
+          </Text>
         </View>
-      )}
-    </TouchableOpacity>
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation?.();
+            if (addState === 'locked') return;
+            if (addState === 'added') onRemove();
+            else if (!disabled) onAdd();
+          }}
+          disabled={disabled || isLocked}
+          hitSlop={6}
+          style={{
+            height: 32,
+            paddingHorizontal: 12,
+            minWidth: 64,
+            borderRadius: 999,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: addState === 'added' ? HG.sky : HG.surface,
+            borderWidth: 1,
+            borderColor: addState === 'added' ? HG.sky : addState === 'locked' ? HG.hairline : HG.hairline2,
+            opacity: disabled || isLocked ? 0.6 : 1,
+          }}
+        >
+          <Text
+            style={{
+              fontFamily: FONT.monoBold,
+              fontSize: 11,
+              letterSpacing: 0.9,
+              color: addState === 'added' ? HG.jet : addState === 'locked' ? HG.muted2 : HG.ink2,
+            }}
+          >
+            {addLabel}
+          </Text>
+        </Pressable>
+      </View>
+    </Pressable>
+  );
+}
+
+// =============================================================================
+// STICKY LINEUP BAR
+// =============================================================================
+
+function StickyLineupBar({
+  lineup,
+  onPlaceOrder,
+  onRemove,
+}: {
+  lineup: InProgressLineup | null;
+  onPlaceOrder: () => void;
+  onRemove: (playerId: string) => void;
+}) {
+  const picked = lineup?.lineup_players ?? [];
+  const capUsed = Number(lineup?.total_cap_used ?? 0);
+  const capLeft = SALARY_CAP - capUsed;
+  const remaining = LINEUP_SIZE - picked.length;
+  const ready = remaining === 0;
+  const slots = Array.from({ length: LINEUP_SIZE }, (_, i) => picked[i] ?? null);
+
+  const cta =
+    remaining === 1 ? 'Pick 1 more player'
+    : remaining > 0 ? `Pick ${remaining} more players`
+    : 'Place Order';
+
+  return (
+    <View
+      style={{
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: HG.surface,
+        borderTopWidth: 1,
+        borderTopColor: HG.hairline,
+        paddingHorizontal: 18,
+        paddingTop: 14,
+        paddingBottom: 14,
+        shadowColor: '#000',
+        shadowOpacity: 0.6,
+        shadowOffset: { width: 0, height: -8 },
+        shadowRadius: 16,
+      }}
+    >
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, letterSpacing: 1.6, color: HG.muted, textTransform: 'uppercase' }}>
+            Your lineup
+          </Text>
+          <View
+            style={{
+              backgroundColor: HG.navySoft,
+              borderColor: HG.skyEdge,
+              borderWidth: 1,
+              borderRadius: 999,
+              paddingHorizontal: 8,
+              paddingVertical: 3,
+            }}
+          >
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.ink, letterSpacing: 0.4 }}>
+              {picked.length} / {LINEUP_SIZE}
+            </Text>
+          </View>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>Cap left</Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink }}>${capLeft.toFixed(0)}</Text>
+        </View>
+      </View>
+
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+        {slots.map((s, i) => {
+          if (!s) {
+            return (
+              <View
+                key={i}
+                style={{
+                  flex: 1,
+                  height: 44,
+                  borderRadius: 10,
+                  backgroundColor: HG.inputBg,
+                  borderWidth: 1,
+                  borderStyle: 'dashed',
+                  borderColor: HG.hairline2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted2, letterSpacing: 1.2 }}>PICK</Text>
+              </View>
+            );
+          }
+          return (
+            <Pressable
+              key={s.nba_players.id}
+              onPress={() => onRemove(s.nba_players.id)}
+              accessibilityLabel={`Remove ${playerLastName(s.nba_players)} from lineup`}
+              style={{
+                flex: 1,
+                height: 44,
+                borderRadius: 10,
+                backgroundColor: HG.surface,
+                borderWidth: 1,
+                borderColor: HG.skyEdge,
+                paddingHorizontal: 8,
+                justifyContent: 'center',
+                gap: 1,
+                position: 'relative',
+              }}
+            >
+              <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 12, color: HG.ink, paddingRight: 14 }}>
+                {playerLastName(s.nba_players)}
+              </Text>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>
+                {fmtPrice(s.frozen_price)}
+              </Text>
+              {/* Tap-to-remove × badge */}
+              <View
+                style={{
+                  position: 'absolute',
+                  top: 4,
+                  right: 4,
+                  width: 16,
+                  height: 16,
+                  borderRadius: 999,
+                  backgroundColor: HG.jet,
+                  borderWidth: 1,
+                  borderColor: HG.hairline2,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.muted, lineHeight: 12 }}>×</Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Pressable
+        onPress={ready ? onPlaceOrder : undefined}
+        disabled={!ready}
+        style={{
+          height: 48,
+          borderRadius: 999,
+          backgroundColor: ready ? HG.sky : HG.surface,
+          borderWidth: ready ? 0 : 1,
+          borderColor: HG.hairline,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Text
+          style={{
+            fontFamily: FONT.monoBold,
+            fontSize: 12,
+            letterSpacing: 1.4,
+            textTransform: 'uppercase',
+            color: ready ? HG.jet : HG.muted2,
+          }}
+        >
+          {cta}
+        </Text>
+      </Pressable>
+    </View>
   );
 }

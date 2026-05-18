@@ -22,45 +22,42 @@ export default function ForgotPasswordScreen() {
       redirectTo: 'betthat://reset-password',
     });
     setLoading(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      setSent(true);
-    }
+    if (error) Alert.alert('Error', error.message);
+    else setSent(true);
   }
 
   return (
     <KeyboardAvoidingView
-      className="flex-1 bg-[#0a0a0a]"
+      className="flex-1 bg-bg"
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View className="flex-1 px-6 pt-16">
         <TouchableOpacity onPress={() => router.back()} className="mb-8">
-          <Text className="text-[#F59E0B] text-sm">← Back</Text>
+          <Text className="text-brand text-sm">← Back</Text>
         </TouchableOpacity>
 
-        <Text className="text-white text-3xl font-black mb-2">Reset Password</Text>
-        <Text className="text-[#71717A] mb-10">
+        <Text className="text-text-primary text-3xl font-bold mb-2">Reset Password</Text>
+        <Text className="text-text-muted mb-10 font-sans">
           Enter your email and we'll send you a reset link.
         </Text>
 
         {sent ? (
-          <View className="bg-[#141414] border border-[#22C55E] rounded-xl p-5">
-            <Text className="text-[#22C55E] font-medium text-base mb-2">Email sent!</Text>
-            <Text className="text-[#A1A1AA]">
+          <View className="bg-surface border border-win rounded-xl p-5">
+            <Text className="text-win font-medium text-base mb-2">Email sent</Text>
+            <Text className="text-text-secondary font-sans">
               Check your inbox for the password reset link.
             </Text>
           </View>
         ) : (
           <>
             <View>
-              <Text className="text-[#A1A1AA] text-xs font-medium mb-2 tracking-wider uppercase">
+              <Text className="text-text-secondary text-xs font-medium mb-2 tracking-wider uppercase font-sans">
                 Email
               </Text>
               <TextInput
-                className="bg-[#141414] border border-[#2E2E2E] rounded-xl px-4 py-4 text-white text-base"
+                className="bg-surface border border-surface-border rounded-xl px-4 py-4 text-text-primary text-base font-sans"
                 placeholder="you@example.com"
-                placeholderTextColor="#4B5563"
+                placeholderTextColor="#71717A"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
@@ -71,12 +68,12 @@ export default function ForgotPasswordScreen() {
             <TouchableOpacity
               onPress={handleReset}
               disabled={loading}
-              className="mt-6 bg-[#F59E0B] rounded-xl py-4 items-center"
+              className="mt-6 bg-brand rounded-xl py-4 items-center"
               style={{ opacity: loading ? 0.7 : 1 }}
             >
               {loading
-                ? <ActivityIndicator color="#000" />
-                : <Text className="text-black font-bold text-base">SEND RESET LINK</Text>
+                ? <ActivityIndicator color="#0A0A0C" />
+                : <Text className="text-bg font-bold text-base">SEND RESET LINK</Text>
               }
             </TouchableOpacity>
           </>

@@ -1,307 +1,562 @@
-import { useEffect, useState } from 'react';
-import { View, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+// =============================================================================
+// BETTHAT — Place Order (Holy Grail V2, Screen 06)
+// Open-input max wager $5–$50. Swipe-to-confirm with tap fallback.
+// Post-swipe: Pending Order state — "In queue · 00:14" with sky-blue dot.
+// =============================================================================
+
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useRouter } from 'expo-router';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+  useDerivedValue,
+} from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
+
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { useLineupStore } from '@/stores/lineup.store';
-import { formatCurrency } from '@/lib/utils';
-import type { Matchup } from '@/lib/database.types';
+import {
+  HG, FONT, fmtPrice, playerLastName, playerInitials,
+  SALARY_CAP, MIN_WAGER, MAX_WAGER, LINEUP_SIZE,
+} from '@/lib/holygrail';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
-/**
- * Matchup create / matchmaking queue screen.
- * Reached after submitting a lineup from the lineup builder.
- * - Creates a lineup record in DB
- * - Creates / joins a matchup
- * - Polls until an opponent is matched
- * - Escrows the entry fee
- */
-export default function MatchupCreateScreen() {
+const SWIPE_TRACK_HEIGHT = 56;
+const THUMB_SIZE = 48;
+
+export default function PlaceOrderScreen() {
   const router = useRouter();
-  const { tier } = useLocalSearchParams<{ tier: string }>();
-  const { profile, wallet, setWallet } = useAuthStore();
-  const { slots, tier: entryTier, reset: resetLineup } = useLineupStore();
-  const [phase, setPhase] = useState<'submitting' | 'waiting' | 'matched' | 'error'>('submitting');
-  const [matchupId, setMatchupId] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState('');
+  const qc = useQueryClient();
+  const { profile, wallet } = useAuthStore();
 
-  const entryFee = Number((tier ?? entryTier ?? '$5').replace('$', ''));
-
-  const submitLineup = useMutation({
-    mutationFn: async () => {
-      if (!profile?.id) throw new Error('Not authenticated');
-
-      // 1. Check wallet balance
-      const { data: walletData } = await supabase
-        .from('wallets')
-        .select('balance, escrow_balance')
-        .eq('user_id', profile.id)
-        .single();
-
-      if (!walletData || Number(walletData.balance) < entryFee) {
-        throw new Error('Insufficient balance. Please deposit funds.');
-      }
-
-      // 2. Create lineup
-      const salaryCap = { 1: 45, 5: 75, 10: 105, 20: 135, 50: 180 }[entryFee] ?? 75;
-      const totalSalary = slots.filter((s) => s.playerId !== null).reduce((sum, s) => sum + s.price, 0);
-      const todayStr = new Date().toISOString().split('T')[0];
-      const { data: lineup, error: lineupErr } = await supabase
-        .from('lineups')
-        .insert({
-          user_id: profile.id,
-          entry_tier: `$${entryFee}` as any,
-          salary_cap: salaryCap,
-          total_salary: totalSalary,
-          status: 'submitted',
-        })
-        .select('id')
-        .single();
-      if (lineupErr) throw lineupErr;
-
-      // 3. Insert lineup_players
-      const playerRows = slots
-        .filter((s) => s.playerId !== null)
-        .map((s) => ({
-          lineup_id: lineup.id,
-          player_id: s.playerId!,
-          slot_position: s.position,
-          price_at_selection: s.price,
-        }));
-      const { error: playersErr } = await supabase.from('lineup_players').insert(playerRows);
-      if (playersErr) throw playersErr;
-
-      // 4. Escrow entry fee
-      const newBalance = Number(walletData.balance) - entryFee;
-      const newEscrow = Number(walletData.escrow_balance) + entryFee;
-      await supabase.from('wallets').update({ balance: newBalance, escrow_balance: newEscrow })
-        .eq('user_id', profile.id);
-
-      // 5. Look for an open matchup to join, or create one
-      const { data: openMatchup } = await supabase
-        .from('matchups')
-        .select('id, creator_id')
-        .eq('entry_tier', `$${entryFee}` as '$1' | '$5' | '$10' | '$20' | '$50')
-        .eq('status', 'pending')
-        .neq('creator_id', profile.id)
-        .is('opponent_id', null)
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .single();
-
-      let finalMatchupId: string;
-
-      if (openMatchup) {
-        // Join existing matchup
-        const pot = entryFee * 2;
-        const { data: joined, error: joinErr } = await supabase
-          .from('matchups')
-          .update({
-            opponent_id: profile.id,
-            pot,
-            rake_amount: pot * 0.035,
-            status: 'matched',
-          })
-          .eq('id', openMatchup.id)
-          .select('id')
-          .single();
-        if (joinErr) throw joinErr;
-        finalMatchupId = joined!.id;
-
-        // Link lineup to this matchup
-        await supabase.from('lineups').update({ matchup_id: finalMatchupId }).eq('id', lineup.id);
-
-        // Log entry fee transaction for both
-        await supabase.from('transactions').insert({
-          user_id: profile.id, type: 'escrow_hold',
-          amount: -entryFee, balance_after: newBalance,
-          description: `Joined $${entryFee} matchup`, status: 'completed',
-          reference_id: finalMatchupId,
-        });
-      } else {
-        // Create new matchup — wait for opponent
-        const { data: created, error: createErr } = await supabase
-          .from('matchups')
-          .insert({
-            creator_id: profile.id,
-            entry_tier: `$${entryFee}` as any,
-            entry_fee: entryFee,
-            pot: 0,
-            rake_amount: 0,
-            game_date: todayStr,
-            status: 'pending',
-          })
-          .select('id')
-          .single();
-        if (createErr) throw createErr;
-        finalMatchupId = created!.id;
-
-        // Link lineup to this matchup
-        await supabase.from('lineups').update({ matchup_id: finalMatchupId }).eq('id', lineup.id);
-
-        await supabase.from('transactions').insert({
-          user_id: profile.id, type: 'escrow_hold',
-          amount: -entryFee, balance_after: newBalance,
-          description: `Created $${entryFee} matchup`, status: 'completed',
-          reference_id: finalMatchupId,
-        });
-      }
-
-      setWallet({ ...walletData, balance: newBalance, escrow_balance: newEscrow } as any);
-      return { matchupId: finalMatchupId, joined: !!openMatchup };
-    },
-    onSuccess: ({ matchupId, joined }) => {
-      setMatchupId(matchupId);
-      resetLineup();
-      if (joined) {
-        setPhase('matched');
-      } else {
-        setPhase('waiting');
-      }
-    },
-    onError: (err: any) => {
-      setErrorMsg(err.message ?? 'Something went wrong.');
-      setPhase('error');
-    },
-  });
-
-  // Auto-submit on mount
-  useEffect(() => {
-    submitLineup.mutate();
-  }, []);
-
-  // Poll for opponent while waiting
-  const { data: matchup } = useQuery({
-    queryKey: ['matchup_status', matchupId],
+  const { data: lineup, isLoading } = useQuery({
+    queryKey: ['place-order-lineup', profile?.id],
     queryFn: async () => {
-      const { data } = await supabase
-        .from('matchups')
-        .select('status, opponent_id')
-        .eq('id', matchupId!)
-        .single();
-      return data;
+      if (!profile?.id) return null;
+      const { data, error } = await supabase
+        .from('lineups')
+        .select(`
+          id, total_cap_used, status, max_wager,
+          lineup_players(slot_number, frozen_price,
+            nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation))
+        `)
+        .eq('user_id', profile.id)
+        .eq('status', 'building')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data as any;
     },
-    enabled: !!matchupId && phase === 'waiting',
-    refetchInterval: 3_000,
+    enabled: !!profile?.id,
   });
 
-  useEffect(() => {
-    if (matchup?.status === 'matched' && matchup.opponent_id) {
-      setPhase('matched');
-    }
-  }, [matchup]);
+  const [wager, setWager] = useState<string>('');
+  const [submitted, setSubmitted] = useState(false);
+  const [queueSec, setQueueSec] = useState(0);
 
-  const handleCancel = async () => {
-    if (!matchupId || !profile?.id) return;
-    Alert.alert(
-      'Cancel Matchup?',
-      'Your entry fee will be refunded.',
-      [
-        { text: 'Keep Waiting', style: 'cancel' },
-        {
-          text: 'Cancel',
-          style: 'destructive',
-          onPress: async () => {
-            await supabase.from('matchups').update({ status: 'cancelled' }).eq('id', matchupId);
-            // Refund escrow
-            const { data: w } = await supabase.from('wallets').select('balance, escrow_balance').eq('user_id', profile.id).single();
-            const newBal = Number(w!.balance) + entryFee;
-            const newEsc = Math.max(0, Number(w!.escrow_balance) - entryFee);
-            await supabase.from('wallets').update({ balance: newBal, escrow_balance: newEsc }).eq('user_id', profile.id);
-            setWallet({ ...w, balance: newBal, escrow_balance: newEsc } as any);
-            router.replace('/(tabs)/home');
-          },
-        },
-      ]
+  const wagerNum = Number(wager);
+  const balance = Number(wallet?.balance ?? 0);
+
+  const validation = useMemo(() => {
+    if (!wager) return { ok: false, msg: '', helper: 'Floor $5 · Ceiling $50' };
+    if (!Number.isFinite(wagerNum)) return { ok: false, msg: 'Enter a number', helper: '' };
+    if (wagerNum < MIN_WAGER) return { ok: false, msg: `Minimum wager is $${MIN_WAGER}`, helper: '' };
+    if (wagerNum > MAX_WAGER) return { ok: false, msg: `Maximum wager is $${MAX_WAGER}`, helper: '' };
+    if (wagerNum > balance) return { ok: false, msg: 'Insufficient buying power. Deposit to continue.', helper: '' };
+    return { ok: true, msg: '', helper: 'You\'ll match at or below this amount.' };
+  }, [wager, wagerNum, balance]);
+
+  const placeMutation = useMutation({
+    mutationFn: async () => {
+      if (!profile?.id || !lineup?.id) throw new Error('Missing lineup');
+      // 1. Submit lineup: status → submitted, lock max_wager
+      const { error: e1 } = await supabase
+        .from('lineups')
+        .update({ status: 'submitted', max_wager: wagerNum, submitted_at: new Date().toISOString(), locked_at: new Date().toISOString() })
+        .eq('id', lineup.id);
+      if (e1) throw e1;
+
+      // 2. Insert into matchmaking queue
+      const { error: e2 } = await supabase
+        .from('matchmaking_queue')
+        .insert({
+          lineup_id: lineup.id,
+          user_id: profile.id,
+          entry_tier: wagerNum, // legacy mirror
+          max_wager: wagerNum,
+          game_date: new Date().toISOString().slice(0, 10),
+        });
+      if (e2) throw e2;
+    },
+    onSuccess: () => {
+      setSubmitted(true);
+      qc.invalidateQueries({ queryKey: ['place-order-lineup'] });
+      qc.invalidateQueries({ queryKey: ['player-market'] });
+    },
+  });
+
+  // Pending order timer
+  useEffect(() => {
+    if (!submitted) return;
+    const id = setInterval(() => setQueueSec((s) => s + 1), 1000);
+    return () => clearInterval(id);
+  }, [submitted]);
+
+  // Loading
+  if (isLoading) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: HG.jet, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={HG.sky} />
+      </SafeAreaView>
     );
-  };
+  }
+
+  // No lineup → bounce back
+  if (!lineup || (lineup.lineup_players ?? []).length < LINEUP_SIZE) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: HG.jet, padding: 24, justifyContent: 'center' }}>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 28, color: HG.ink, marginBottom: 12 }}>
+          No <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>lineup</Text> ready
+        </Text>
+        <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, lineHeight: 21, marginBottom: 24 }}>
+          Pick 3 players in the Market before placing an order.
+        </Text>
+        <Pressable
+          onPress={() => router.replace('/(tabs)/lineup' as any)}
+          style={{ height: 48, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+            Open Market
+          </Text>
+        </Pressable>
+      </SafeAreaView>
+    );
+  }
+
+  // Pending Order state
+  if (submitted) {
+    return <PendingOrderState lineup={lineup} wager={wagerNum} queueSec={queueSec} onCancel={() => router.replace('/(tabs)/matchups' as any)} />;
+  }
+
+  const picked = (lineup.lineup_players ?? []).sort((a: any, b: any) => a.slot_number - b.slot_number);
+  const totalCost = picked.reduce((s: number, lp: any) => s + Number(lp.frozen_price), 0);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a] items-center justify-center px-8">
-
-      {phase === 'submitting' && (
-        <View className="items-center">
-          <ActivityIndicator size="large" color="#F59E0B" className="mb-6" />
-          <Text className="text-white text-xl font-black mb-2">Submitting Lineup</Text>
-          <Text className="text-[#71717A] text-center">Locking your picks and securing escrow...</Text>
-        </View>
-      )}
-
-      {phase === 'waiting' && (
-        <View className="items-center w-full">
-          {/* Pulsing ring animation via opacity cycling */}
-          <View className="w-28 h-28 rounded-full border-4 border-[#F59E0B] items-center justify-center mb-6">
-            <ActivityIndicator size="large" color="#F59E0B" />
+    <GestureHandlerRootView style={{ flex: 1, backgroundColor: HG.jet }}>
+      <SafeAreaView edges={['top']} style={{ flex: 1 }}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
+          {/* Header */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, height: 54 }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+              Order · Review
+            </Text>
+            <Pressable onPress={() => router.back()} hitSlop={12}>
+              <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M18 6 6 18M6 6l12 12" />
+              </Svg>
+            </Pressable>
           </View>
-          <Text className="text-white text-2xl font-black mb-2">Finding Opponent</Text>
-          <Text className="text-[#71717A] text-center mb-8">
-            Your {formatCurrency(entryFee)} lineup is locked in.{'\n'}Matching you with a worthy competitor...
+
+          <Text style={{ fontFamily: FONT.serif, fontSize: 36, color: HG.ink, paddingHorizontal: 18, marginTop: 8, letterSpacing: -0.6 }}>
+            Place <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>Order</Text>
           </Text>
 
-          <View className="w-full bg-[#141414] border border-[#2E2E2E] rounded-2xl p-5 mb-8">
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-[#71717A] text-sm">Entry Tier</Text>
-              <Text className="text-[#F59E0B] font-bold">{formatCurrency(entryFee)}</Text>
-            </View>
-            <View className="flex-row justify-between mb-3">
-              <Text className="text-[#71717A] text-sm">Potential Payout</Text>
-              <Text className="text-[#22C55E] font-bold">{formatCurrency(entryFee * 2 * 0.965)}</Text>
-            </View>
-            <View className="flex-row justify-between">
-              <Text className="text-[#71717A] text-sm">Status</Text>
-              <View className="flex-row items-center gap-1.5">
-                <View className="w-2 h-2 rounded-full bg-[#F59E0B]" />
-                <Text className="text-[#F59E0B] font-bold text-sm">In Queue</Text>
+          {/* Lineup summary */}
+          <View style={{ paddingHorizontal: 18, marginTop: 26 }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 12 }}>
+              Lineup
+            </Text>
+            <View style={{ backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, overflow: 'hidden' }}>
+              {picked.map((lp: any, i: number) => (
+                <View
+                  key={lp.nba_players.id}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderTopWidth: i === 0 ? 0 : 1, borderColor: HG.hairline }}
+                >
+                  <MonogramTile initials={playerInitials(lp.nba_players)} jersey={lp.nba_players.jersey_number} size={42} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>
+                      {lp.nba_players.full_name}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
+                      {lp.nba_players.ticker_handle ?? ''}
+                    </Text>
+                  </View>
+                  <Text style={{ fontFamily: FONT.monoMedium, fontSize: 15, color: HG.ink }}>
+                    {fmtPrice(lp.frozen_price)}
+                  </Text>
+                </View>
+              ))}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 14, borderTopWidth: 1, borderColor: HG.hairline }}>
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 0.6 }}>
+                  Lineup total
+                </Text>
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 13, color: HG.ink }}>
+                  {fmtPrice(totalCost)} <Text style={{ color: HG.muted }}>/ ${SALARY_CAP} cap</Text>
+                </Text>
               </View>
             </View>
           </View>
 
-          <TouchableOpacity
-            onPress={handleCancel}
-            className="border border-[#2E2E2E] rounded-xl py-3 px-8"
-          >
-            <Text className="text-[#71717A] font-medium">Cancel & Refund</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+          {/* Max wager */}
+          <View style={{ paddingHorizontal: 18, marginTop: 36, alignItems: 'center' }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+              Max wager
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline', marginTop: 12 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 36, color: validation.ok || !wager ? HG.muted2 : HG.down, marginRight: 4 }}>$</Text>
+              <TextInput
+                value={wager}
+                onChangeText={setWager}
+                keyboardType="numeric"
+                placeholder="0"
+                placeholderTextColor={HG.muted2}
+                maxLength={4}
+                style={{
+                  fontFamily: FONT.monoMedium,
+                  fontSize: 64,
+                  color: validation.ok || !wager ? HG.ink : HG.down,
+                  letterSpacing: -2,
+                  minWidth: 110,
+                  textAlign: 'center',
+                  padding: 0,
+                }}
+              />
+            </View>
+            <Text
+              style={{
+                fontFamily: FONT.sans,
+                fontSize: 12,
+                color: validation.msg ? HG.down : HG.muted,
+                marginTop: 8,
+                textAlign: 'center',
+              }}
+            >
+              {validation.msg || validation.helper}
+            </Text>
 
-      {phase === 'matched' && (
-        <View className="items-center w-full">
-          <Text className="text-5xl mb-4">🔥</Text>
-          <Text className="text-white text-2xl font-black mb-2">Opponent Found!</Text>
-          <Text className="text-[#71717A] text-center mb-8">
-            Your matchup is live. May the best lineup win!
+            {/* Quick tap presets */}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
+              {[5, 10, 25, 50].map((v) => {
+                const active = wagerNum === v;
+                return (
+                  <Pressable
+                    key={v}
+                    onPress={() => setWager(String(v))}
+                    style={{
+                      paddingHorizontal: 14,
+                      height: 32,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: active ? HG.sky : HG.hairline2,
+                      backgroundColor: active ? HG.skySoft : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: FONT.monoBold,
+                        fontSize: 11,
+                        color: active ? HG.sky : HG.muted,
+                        letterSpacing: 0.6,
+                      }}
+                    >
+                      ${v}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        </ScrollView>
+
+        {/* Swipe to place order */}
+        <View
+          style={{
+            position: 'absolute', left: 0, right: 0, bottom: 0,
+            paddingHorizontal: 18, paddingTop: 12, paddingBottom: 28,
+            backgroundColor: HG.jet, borderTopWidth: 1, borderTopColor: HG.hairline,
+          }}
+        >
+          <SwipeToPlaceOrder
+            enabled={validation.ok && !placeMutation.isPending}
+            onConfirm={() => placeMutation.mutate()}
+          />
+          <Pressable
+            onPress={() => placeMutation.mutate()}
+            disabled={!validation.ok || placeMutation.isPending}
+            style={{ alignItems: 'center', paddingVertical: 12, marginTop: 4 }}
+          >
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: validation.ok ? HG.sky : HG.muted2, letterSpacing: 1, textTransform: 'uppercase' }}>
+              {placeMutation.isPending ? 'Placing…' : 'Tap to place order'}
+            </Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    </GestureHandlerRootView>
+  );
+}
+
+// =============================================================================
+// SWIPE-TO-CONFIRM track with Reanimated 4 PanGesture
+// =============================================================================
+
+function SwipeToPlaceOrder({ enabled, onConfirm }: { enabled: boolean; onConfirm: () => void }) {
+  // CRITICAL: trackWidth must be a shared value, NOT a ref. Worklet handlers
+  // (Gesture.Pan().onUpdate / onEnd) run on the UI thread and cannot read
+  // `.current` from a JS-thread ref. Reading a stale ref is what kept the
+  // gesture from firing in the first cut of this screen.
+  const translateX = useSharedValue(0);
+  const trackWidth = useSharedValue(0);
+  const triggered = useRef(false);
+
+  function fire() {
+    if (triggered.current) return;
+    triggered.current = true;
+    onConfirm();
+  }
+
+  const pan = Gesture.Pan()
+    .activeOffsetX(8)        // need 8px of movement before claiming the gesture
+    .failOffsetY([-20, 20])  // give up if user is scrolling vertically
+    .onUpdate((e) => {
+      'worklet';
+      const max = trackWidth.value - THUMB_SIZE - 8;
+      if (max <= 0) return;
+      translateX.value = Math.min(Math.max(0, e.translationX), max);
+    })
+    .onEnd(() => {
+      'worklet';
+      const max = trackWidth.value - THUMB_SIZE - 8;
+      if (max > 0 && translateX.value >= max * 0.88) {
+        translateX.value = withTiming(max, { duration: 120 });
+        runOnJS(fire)();
+      } else {
+        translateX.value = withTiming(0, { duration: 220 });
+      }
+    });
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  // Fill expands as the thumb moves; opacity also lifts so the user feels
+  // the action arming.
+  const fillStyle = useAnimatedStyle(() => {
+    const tw = trackWidth.value || 1;
+    return {
+      width: translateX.value + THUMB_SIZE,
+      opacity: 0.22 + Math.min(0.55, translateX.value / tw),
+    };
+  });
+
+  return (
+    <View
+      onLayout={(e) => {
+        trackWidth.value = e.nativeEvent.layout.width;
+      }}
+      style={{
+        height: SWIPE_TRACK_HEIGHT,
+        borderRadius: 999,
+        backgroundColor: HG.surface,
+        borderWidth: 1,
+        borderColor: enabled ? HG.skyEdge : HG.hairline,
+        overflow: 'hidden',
+        justifyContent: 'center',
+        position: 'relative',
+        opacity: enabled ? 1 : 0.5,
+      }}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: HG.sky },
+          fillStyle,
+        ]}
+      />
+      <Text
+        pointerEvents="none"
+        style={{
+          fontFamily: FONT.monoBold,
+          fontSize: 12,
+          color: HG.ink,
+          letterSpacing: 1.4,
+          textTransform: 'uppercase',
+          textAlign: 'center',
+        }}
+      >
+        Swipe to place order
+      </Text>
+      <GestureDetector gesture={pan}>
+        <Animated.View
+          // hitSlop on the thumb so users with thicker fingers can grab it
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={[
+            {
+              position: 'absolute',
+              left: 4,
+              top: 4,
+              width: THUMB_SIZE,
+              height: THUMB_SIZE,
+              borderRadius: 999,
+              backgroundColor: HG.sky,
+              alignItems: 'center',
+              justifyContent: 'center',
+              shadowColor: HG.sky,
+              shadowOpacity: 0.4,
+              shadowRadius: 12,
+              shadowOffset: { width: 0, height: 0 },
+            },
+            thumbStyle,
+          ]}
+        >
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={HG.jet} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="M5 12h14M13 6l6 6-6 6" />
+          </Svg>
+        </Animated.View>
+      </GestureDetector>
+    </View>
+  );
+}
+
+// =============================================================================
+// PENDING ORDER STATE — "In queue · 00:14"
+// =============================================================================
+
+function PendingOrderState({
+  lineup, wager, queueSec, onCancel,
+}: {
+  lineup: any; wager: number; queueSec: number; onCancel: () => void;
+}) {
+  const mm = String(Math.floor(queueSec / 60)).padStart(2, '0');
+  const ss = String(queueSec % 60).padStart(2, '0');
+  const router = useRouter();
+  const { profile } = useAuthStore();
+
+  // Demo helper: until a real matchmaker Edge Fn exists, surface any pending
+  // 'matched' matchup so the user can see Match Found (Screen 06.5) on demand.
+  const { data: matchedDemo } = useQuery({
+    queryKey: ['matched-demo', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return null;
+      const { data } = await supabase
+        .from('matchups')
+        .select('id, status, matched_at')
+        .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+        .eq('status', 'matched')
+        .order('matched_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!profile?.id,
+    refetchInterval: 5000,
+  });
+
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: HG.jet }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, height: 54 }}>
+        <View style={{ width: 22 }} />
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+          Order · Pending
+        </Text>
+        <Pressable onPress={() => router.replace('/(tabs)/home' as any)} hitSlop={12}>
+          <Svg width={22} height={22} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="M18 6 6 18M6 6l12 12" />
+          </Svg>
+        </Pressable>
+      </View>
+
+      <View style={{ paddingHorizontal: 18, paddingTop: 36, alignItems: 'center' }}>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 36, color: HG.ink, letterSpacing: -0.6 }}>
+          Order placed.
+        </Text>
+        <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, marginTop: 10, textAlign: 'center', lineHeight: 21 }}>
+          Looking for a match around your max wager.
+        </Text>
+
+        {/* Status pill */}
+        <View
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 10,
+            marginTop: 28,
+            paddingHorizontal: 18, paddingVertical: 10,
+            backgroundColor: HG.surface,
+            borderRadius: 999,
+            borderWidth: 1, borderColor: HG.skyEdge,
+          }}
+        >
+          <PulsingDot />
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.ink, letterSpacing: 0.4 }}>
+            In queue · {mm}:{ss}
           </Text>
-          <TouchableOpacity
-            onPress={() => router.replace(`/matchup/${matchupId}`)}
-            className="bg-[#F59E0B] w-full rounded-xl py-4 items-center mb-3"
-          >
-            <Text className="text-black font-black text-base">VIEW MATCHUP</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => router.replace('/(tabs)/home')}
-            className="py-3 items-center"
-          >
-            <Text className="text-[#71717A]">Back to Home</Text>
-          </TouchableOpacity>
         </View>
-      )}
 
-      {phase === 'error' && (
-        <View className="items-center w-full">
-          <Text className="text-5xl mb-4">❌</Text>
-          <Text className="text-white text-xl font-black mb-2">Something Went Wrong</Text>
-          <Text className="text-[#EF4444] text-center mb-8">{errorMsg}</Text>
-          <TouchableOpacity
-            onPress={() => router.back()}
-            className="border border-[#2E2E2E] rounded-xl py-3 px-8"
-          >
-            <Text className="text-white">Go Back</Text>
-          </TouchableOpacity>
+        <View style={{ marginTop: 36, padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, width: '100%' }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+              Max wager
+            </Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 14, color: HG.ink }}>{fmtPrice(wager)}</Text>
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+              Lineup
+            </Text>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.ink }}>
+              {(lineup?.lineup_players ?? []).map((lp: any) => playerLastName(lp.nba_players)).join(' · ')}
+            </Text>
+          </View>
         </View>
-      )}
 
+        {/* Demo handoff to Match Found — replaces the real matchmaker for now */}
+        {matchedDemo?.id ? (
+          <Pressable
+            onPress={() => router.replace(`/matchup/found/${matchedDemo.id}` as any)}
+            style={{
+              marginTop: 28, height: 48, paddingHorizontal: 22,
+              borderRadius: 999, backgroundColor: HG.sky,
+              alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+              See your match
+            </Text>
+          </Pressable>
+        ) : null}
+
+        <Pressable onPress={onCancel} style={{ marginTop: matchedDemo?.id ? 12 : 24, padding: 12 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+            Cancel order
+          </Text>
+        </Pressable>
+      </View>
     </SafeAreaView>
+  );
+}
+
+function PulsingDot() {
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    opacity.value = withTiming(0.35, { duration: 800 });
+    const id = setInterval(() => {
+      opacity.value = withTiming(opacity.value === 1 ? 0.35 : 1, { duration: 800 });
+    }, 800);
+    return () => clearInterval(id);
+  }, []);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return (
+    <Animated.View style={[{ width: 8, height: 8, borderRadius: 999, backgroundColor: HG.sky }, style]} />
   );
 }

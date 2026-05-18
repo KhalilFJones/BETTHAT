@@ -1,96 +1,132 @@
+// =============================================================================
+// send-notification — service-role only.
+// =============================================================================
+// Fixes:
+//   H-1: maps `type` to the correct push_<type> preference column.
+//   H-2: rejects any caller that isn't the service-role.
+//   H-3: queries `push_notification_tokens` (multi-device) instead of
+//        profiles.push_token (single-token legacy).
+//
+// Callers: scheduled jobs, other Edge Functions, server-side notification fan-out.
+// Never callable from a user-authenticated session.
+// =============================================================================
+
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 
 const supabase = createClient(
   Deno.env.get('SUPABASE_URL')!,
-  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 );
+const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 interface NotifPayload {
   user_id: string;
   type: string;
   title: string;
   body?: string;
-  data?: Record<string, string>;
+  data?: Record<string, unknown>;
   action_url?: string;
 }
 
-/**
- * Stores a notification in user_notifications and sends
- * an Expo push notification if the user has a push token.
- */
+// Map notification `type` → notification_preferences column.
+const PREF_COLUMN: Record<string, string> = {
+  matchup_found:          'push_matchup_found',
+  game_starting:          'push_game_starting',
+  game_final:             'push_game_final',
+  sidebet_received:       'push_sidebet_received',
+  sidebet_accepted:       'push_sidebet_received',
+  sidebet_result:         'push_sidebet_result',
+  friend_request:         'push_friend_request',
+  friend_challenge:       'push_friend_challenge',
+  achievement_earned:     'push_achievement_earned',
+  deposit_confirmed:      'push_deposit_confirmed',
+  withdrawal_processed:   'push_withdrawal_processed',
+  price_alert:            'push_price_alert',
+};
+
 Deno.serve(async (req) => {
-  const payload: NotifPayload = await req.json();
+  // H-2: service-role only.
+  const auth = req.headers.get('Authorization') ?? '';
+  if (auth !== `Bearer ${SERVICE_KEY}`) {
+    return resp(401, { error: 'service role required' });
+  }
+
+  const payload = (await req.json()) as NotifPayload;
   const { user_id, type, title, body, data, action_url } = payload;
-
   if (!user_id || !type || !title) {
-    return resp(400, { error: 'user_id, type, and title are required.' });
+    return resp(400, { error: 'user_id, type, and title are required' });
   }
 
-  // Check notification preferences
-  const { data: prefs } = await supabase
-    .from('notification_preferences')
-    .select('*')
-    .eq('user_id', user_id)
-    .single();
-
-  const prefKey = type as keyof typeof prefs;
-  if (prefs && prefs[prefKey] === false) {
-    return resp(200, { skipped: true, reason: 'User opted out of this notification type' });
+  // H-1: opt-out check against the correct push_<type> column.
+  const prefCol = PREF_COLUMN[type];
+  if (prefCol) {
+    const { data: prefs } = await supabase
+      .from('notification_preferences')
+      .select(prefCol)
+      .eq('user_id', user_id)
+      .maybeSingle();
+    if (prefs && (prefs as Record<string, unknown>)[prefCol] === false) {
+      return resp(200, { skipped: true, reason: 'user opted out' });
+    }
   }
 
-  // Insert in-app notification
+  // In-app notification record.
   await supabase.from('notifications').insert({
-    user_id,
-    type,
-    title,
+    user_id, type, title,
     body: body ?? null,
     data: data ?? null,
     is_read: false,
   });
 
-  // Get user's push token
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('push_token')
-    .eq('id', user_id)
-    .single();
+  // H-3: multi-device push token table.
+  const { data: tokens } = await supabase
+    .from('push_notification_tokens')
+    .select('token')
+    .eq('user_id', user_id)
+    .eq('is_active', true);
 
-  const pushToken = profile?.push_token;
-  if (!pushToken || !pushToken.startsWith('ExponentPushToken[')) {
-    return resp(200, { sent: false, reason: 'No valid push token' });
+  const validTokens = (tokens ?? [])
+    .map((t) => t.token)
+    .filter((t) => typeof t === 'string' && t.startsWith('ExponentPushToken['));
+
+  if (validTokens.length === 0) {
+    return resp(200, { sent: false, reason: 'no active push tokens' });
   }
 
-  // Send via Expo Push Notifications API
-  const expoPayload = {
-    to: pushToken,
+  // Expo accepts an array of messages in one POST.
+  const messages = validTokens.map((to) => ({
+    to,
     sound: 'default',
     title,
     body,
     data: { type, action_url, ...(data ?? {}) },
     priority: 'high',
-  };
+  }));
 
   try {
     const expoRes = await fetch('https://exp.host/--/api/v2/push/send', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(expoPayload),
+      body: JSON.stringify(messages),
     });
-
     const expoData = await expoRes.json();
 
-    if (expoData?.data?.status === 'error') {
-      // If invalid token, clear it
-      if (expoData.data.details?.error === 'DeviceNotRegistered') {
-        await supabase.from('profiles').update({ push_token: null }).eq('id', user_id);
+    // Deactivate tokens that Expo rejects as unregistered.
+    const items: any[] = Array.isArray(expoData?.data) ? expoData.data : [];
+    for (let i = 0; i < items.length; i++) {
+      const result = items[i];
+      if (result?.status === 'error' && result?.details?.error === 'DeviceNotRegistered') {
+        await supabase
+          .from('push_notification_tokens')
+          .update({ is_active: false })
+          .eq('token', validTokens[i]);
       }
-      console.error('Expo push error:', expoData.data.details);
     }
 
-    return resp(200, { sent: true, expo_status: expoData?.data?.status });
+    return resp(200, { sent: validTokens.length, expo: expoData });
   } catch (err: any) {
-    console.error('Push send error:', err);
-    return resp(200, { sent: false, error: err.message });
+    console.error('[send-notification] push error:', err);
+    return resp(200, { sent: false, error: err?.message ?? 'unknown' });
   }
 });
 

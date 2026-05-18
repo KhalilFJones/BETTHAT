@@ -3,10 +3,10 @@ module.exports = function (api) {
   return {
     presets: [
       ['babel-preset-expo', { jsxImportSource: 'nativewind' }],
-    ],
-    plugins: [
+      // nativewind/babel is a PRESET (returns { plugins: [...] }), not a plugin.
+      // It already includes react-native-worklets/plugin internally, so the
+      // reanimated/worklets plugin doesn't need a separate entry here.
       'nativewind/babel',
-      'react-native-reanimated/plugin',
     ],
   };
 };

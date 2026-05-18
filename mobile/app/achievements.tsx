@@ -4,13 +4,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
+import { COLORS } from '@/lib/utils';
 import type { Achievement, UserAchievement } from '@/lib/database.types';
 
 const RARITY_COLORS: Record<string, string> = {
-  common: '#71717A',
-  rare: '#3B82F6',
-  epic: '#A855F7',
-  legendary: '#F59E0B',
+  common:    COLORS.textMuted,
+  rare:      COLORS.info,
+  epic:      '#A855F7',
+  legendary: COLORS.brand,
 };
 
 const RARITY_LABELS: Record<string, string> = {
@@ -26,12 +27,13 @@ export default function AchievementsScreen() {
     queryFn: async () => {
       if (!profile?.id) return { all: [], earned: [] };
       const [allRes, earnedRes] = await Promise.all([
-        supabase.from('achievements').select('*').order('rarity').order('title'),
-        supabase.from('user_achievements').select('*, achievement:achievements(id)').eq('user_id', profile.id),
+        // Schema columns: name, description, icon_url, rarity, category.
+        supabase.from('achievements').select('*').order('rarity').order('name'),
+        supabase.from('user_achievements').select('*').eq('user_id', profile.id),
       ]);
       return {
         all: (allRes.data ?? []) as Achievement[],
-        earned: (earnedRes.data ?? []) as (UserAchievement & { achievement: { id: string } })[],
+        earned: (earnedRes.data ?? []) as UserAchievement[],
       };
     },
     enabled: !!profile?.id,
@@ -42,51 +44,50 @@ export default function AchievementsScreen() {
   const totalCount = data?.all.length ?? 0;
   const pct = totalCount > 0 ? Math.round((earnedCount / totalCount) * 100) : 0;
 
-  // Group by rarity
   const grouped = (['legendary', 'epic', 'rare', 'common'] as const).map((rarity) => ({
     rarity,
     items: (data?.all ?? []).filter((a) => a.rarity === rarity),
   })).filter((g) => g.items.length > 0);
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
-      {/* Nav */}
+    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
       <View className="flex-row items-center px-5 pt-4 pb-2">
         <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-[#F59E0B] text-sm">← Back</Text>
+          <Text className="text-brand text-sm">← Back</Text>
         </TouchableOpacity>
-        <Text className="text-white font-black text-xl">🎖️ Achievements</Text>
+        <Text className="text-text-primary font-bold text-xl">Achievements</Text>
       </View>
 
-      {/* Progress bar */}
-      <View className="mx-5 mt-4 mb-5 bg-[#141414] border border-[#2E2E2E] rounded-2xl p-5">
+      <View className="mx-5 mt-4 mb-5 bg-surface border border-surface-border rounded-2xl p-5">
         <View className="flex-row justify-between mb-2">
-          <Text className="text-white font-bold">{earnedCount} / {totalCount} Unlocked</Text>
-          <Text className="text-[#F59E0B] font-bold">{pct}%</Text>
+          <Text className="text-text-primary font-bold font-mono">
+            {earnedCount} / {totalCount} Unlocked
+          </Text>
+          <Text className="text-brand font-mono font-bold">{pct}%</Text>
         </View>
-        <View className="h-3 bg-[#2E2E2E] rounded-full overflow-hidden">
+        <View className="h-3 bg-surface-border rounded-full overflow-hidden">
           <View
-            className="h-full bg-[#F59E0B] rounded-full"
+            className="h-full bg-brand rounded-full"
             style={{ width: `${pct}%` }}
           />
         </View>
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color="#F59E0B" className="mt-10" />
+        <ActivityIndicator color={COLORS.brand} className="mt-10" />
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
           {grouped.map(({ rarity, items }) => (
             <View key={rarity} className="mb-6">
               <View className="flex-row items-center mb-3">
-                <View className="flex-1 h-px bg-[#1E1E1E]" />
+                <View className="flex-1 h-px bg-surface-border" />
                 <Text
-                  className="mx-3 text-xs font-black tracking-widest uppercase"
+                  className="mx-3 text-xs font-bold tracking-widest uppercase font-sans"
                   style={{ color: RARITY_COLORS[rarity] }}
                 >
                   {RARITY_LABELS[rarity]}
                 </Text>
-                <View className="flex-1 h-px bg-[#1E1E1E]" />
+                <View className="flex-1 h-px bg-surface-border" />
               </View>
 
               {items.map((ach) => {
@@ -95,38 +96,27 @@ export default function AchievementsScreen() {
                 return (
                   <View
                     key={ach.id}
-                    className="flex-row items-center bg-[#141414] rounded-xl px-4 py-3.5 mb-2 border"
+                    className="flex-row items-center bg-surface rounded-xl px-4 py-3.5 mb-2 border"
                     style={{
-                      borderColor: isUnlocked ? RARITY_COLORS[rarity] + '55' : '#1E1E1E',
+                      borderColor: isUnlocked ? RARITY_COLORS[rarity] + '55' : COLORS.border,
                       opacity: isUnlocked ? 1 : 0.45,
                     }}
                   >
-                    <View
-                      className="w-12 h-12 rounded-xl items-center justify-center mr-4"
-                      style={{ backgroundColor: isUnlocked ? RARITY_COLORS[rarity] + '22' : '#1E1E1E' }}
-                    >
-                      <Text className="text-2xl">{ach.icon}</Text>
-                    </View>
                     <View className="flex-1">
-                      <Text className="text-white font-bold text-sm">{ach.title}</Text>
-                      <Text className="text-[#71717A] text-xs mt-0.5" numberOfLines={2}>
+                      <Text className="text-text-primary font-bold text-sm">{ach.name}</Text>
+                      <Text className="text-text-muted text-xs mt-0.5 font-sans" numberOfLines={2}>
                         {ach.description}
                       </Text>
                       {isUnlocked && earned?.earned_at && (
-                        <Text className="text-xs mt-1" style={{ color: RARITY_COLORS[rarity] }}>
+                        <Text className="text-xs mt-1 font-mono" style={{ color: RARITY_COLORS[rarity] }}>
                           Unlocked {new Date(earned.earned_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                         </Text>
                       )}
                     </View>
                     {isUnlocked ? (
-                      <Text className="text-xl">✅</Text>
+                      <Text className="text-win font-bold text-xs">UNLOCKED</Text>
                     ) : (
-                      <View className="items-end">
-                        {ach.points_required && (
-                          <Text className="text-[#4B5563] text-xs">{ach.points_required} pts</Text>
-                        )}
-                        <Text className="text-[#4B5563] text-xs">Locked</Text>
-                      </View>
+                      <Text className="text-text-muted text-xs font-sans">Locked</Text>
                     )}
                   </View>
                 );

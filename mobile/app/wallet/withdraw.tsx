@@ -2,115 +2,167 @@ import { useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
+import { requestWithdrawal } from '@/services/wallet';
 import { formatCurrency } from '@/lib/utils';
+import type { AppConfig, PayoutMethod } from '@/lib/database.types';
 
 export default function WithdrawScreen() {
   const router = useRouter();
-  const { profile, wallet, setWallet } = useAuthStore();
+  const { profile, wallet } = useAuthStore();
   const [amount, setAmount] = useState('');
+  const [selectedMethodId, setSelectedMethodId] = useState<string | null>(null);
 
-  const maxWithdraw = wallet?.balance ?? 0;
+  const { data: cfg } = useQuery({
+    queryKey: ['app_config', 'min_withdrawal'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('app_config')
+        .select('*')
+        .eq('key', 'min_withdrawal')
+        .maybeSingle();
+      return data as AppConfig | null;
+    },
+    staleTime: 5 * 60_000,
+  });
+  const minWithdrawal = cfg?.value ? Number(cfg.value) : 10;
+
+  const { data: payoutMethods } = useQuery({
+    queryKey: ['payout_methods', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return [];
+      const { data } = await supabase
+        .from('payout_methods')
+        .select('*')
+        .eq('user_id', profile.id)
+        .eq('is_active', true);
+      return (data ?? []) as PayoutMethod[];
+    },
+    enabled: !!profile?.id,
+  });
+
+  const maxWithdraw = Number(wallet?.balance ?? 0);
   const withdrawAmount = parseFloat(amount);
-  const isValid = !isNaN(withdrawAmount) && withdrawAmount >= 5 && withdrawAmount <= maxWithdraw;
+  const isValid =
+    !Number.isNaN(withdrawAmount) &&
+    withdrawAmount >= minWithdrawal &&
+    withdrawAmount <= maxWithdraw &&
+    !!selectedMethodId;
 
-  const requestWithdrawal = useMutation({
+  const withdraw = useMutation({
     mutationFn: async () => {
-      if (!isValid || !profile?.id) throw new Error('Invalid withdrawal amount.');
-
-      // Deduct from balance, create pending transaction
-      const { data: w } = await supabase.from('wallets').select('balance, total_withdrawn').eq('user_id', profile.id).single();
-      if (Number(w!.balance) < withdrawAmount) throw new Error('Insufficient balance.');
-
-      const newBal = Number(w!.balance) - withdrawAmount;
-      const newWithdrawn = Number(w!.total_withdrawn) + withdrawAmount;
-
-      await supabase.from('wallets').update({ balance: newBal, total_withdrawn: newWithdrawn }).eq('user_id', profile.id);
-      await supabase.from('transactions').insert({
-        user_id: profile.id, type: 'withdrawal', amount: -withdrawAmount,
-        balance_after: newBal,
-        description: 'Withdrawal request — pending payout method setup',
-        status: 'pending',
-      });
-
-      setWallet({ ...w, balance: newBal, total_withdrawn: newWithdrawn } as any);
+      if (!isValid || !selectedMethodId) throw new Error('Invalid withdrawal request');
+      return requestWithdrawal(withdrawAmount, selectedMethodId);
     },
     onSuccess: () => {
       Alert.alert(
-        '✅ Withdrawal Requested',
-        'Your withdrawal is processing. Funds arrive within 1-3 business days via your payout method.',
-        [{ text: 'Done', onPress: () => router.replace('/wallet') }]
+        'Withdrawal Requested',
+        'Your withdrawal is processing. Funds arrive within 1–3 business days.',
+        [{ text: 'Done', onPress: () => router.replace('/wallet') }],
       );
     },
-    onError: (err: any) => Alert.alert('Error', err.message),
+    onError: (err: any) => Alert.alert('Could not withdraw', err?.message ?? 'Try again.'),
   });
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
       <View className="flex-row items-center px-5 pt-4 pb-2">
         <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-[#F59E0B] text-sm">← Back</Text>
+          <Text className="text-brand text-sm">← Back</Text>
         </TouchableOpacity>
-        <Text className="text-white font-black text-xl">Withdraw</Text>
+        <Text className="text-text-primary font-bold text-xl">Withdraw</Text>
       </View>
 
       <View className="flex-1 px-5 pt-6">
-        <Text className="text-[#71717A] text-xs uppercase tracking-wider mb-2">Available to Withdraw</Text>
-        <Text className="text-white text-3xl font-black mb-8">{formatCurrency(maxWithdraw)}</Text>
+        <Text className="text-text-muted text-xs uppercase tracking-wider mb-2 font-sans">
+          Available to Withdraw
+        </Text>
+        <Text className="text-text-primary font-mono text-3xl font-bold mb-8">
+          {formatCurrency(maxWithdraw)}
+        </Text>
 
-        {(wallet?.escrow_balance ?? 0) > 0 && (
-          <View className="bg-[#1a1200] border border-[#F59E0B33] rounded-xl px-4 py-3 mb-6">
-            <Text className="text-[#F59E0B] text-sm">
-              ⚠️ {formatCurrency(wallet!.escrow_balance)} is locked in active matchups and not available to withdraw.
+        {Number(wallet?.escrow_balance ?? 0) > 0 && (
+          <View className="bg-brandTint border border-warning rounded-xl px-4 py-3 mb-6">
+            <Text className="text-warning text-sm font-sans">
+              {formatCurrency(Number(wallet?.escrow_balance ?? 0))} is locked in active matchups
+              and not available to withdraw.
             </Text>
           </View>
         )}
 
-        <Text className="text-white font-bold mb-2">Enter Amount (min $5)</Text>
+        <Text className="text-text-primary font-bold mb-2">
+          Enter Amount (min ${minWithdrawal})
+        </Text>
         <TextInput
-          className="bg-[#141414] border border-[#2E2E2E] rounded-xl px-4 py-3 text-white text-2xl font-black text-center mb-3"
+          className="bg-surface border border-surface-border rounded-xl px-4 py-3 text-text-primary font-mono text-2xl text-center mb-3"
           placeholder="$0.00"
-          placeholderTextColor="#4B5563"
+          placeholderTextColor="#71717A"
           keyboardType="decimal-pad"
           value={amount}
           onChangeText={setAmount}
         />
-
-        <TouchableOpacity
-          onPress={() => setAmount(String(maxWithdraw))}
-          className="items-center mb-8"
-        >
-          <Text className="text-[#F59E0B] text-sm">Withdraw all ({formatCurrency(maxWithdraw)})</Text>
+        <TouchableOpacity onPress={() => setAmount(String(maxWithdraw))} className="items-center mb-6">
+          <Text className="text-brand text-sm">Withdraw all ({formatCurrency(maxWithdraw)})</Text>
         </TouchableOpacity>
+
+        <Text className="text-text-primary font-bold mb-2">Payout Method</Text>
+        {(payoutMethods ?? []).length === 0 ? (
+          <View className="bg-surface border border-surface-border rounded-xl p-4 mb-6">
+            <Text className="text-text-muted text-sm font-sans">
+              You haven't added a verified payout method yet. Add one in Settings.
+            </Text>
+          </View>
+        ) : (
+          <View className="mb-6">
+            {(payoutMethods ?? []).map((m) => (
+              <TouchableOpacity
+                key={m.id}
+                onPress={() => setSelectedMethodId(m.id)}
+                disabled={!m.is_verified}
+                className="border rounded-xl px-4 py-3 mb-2"
+                style={{
+                  borderColor: selectedMethodId === m.id ? '#F5A524' : '#2A2A2E',
+                  backgroundColor: selectedMethodId === m.id ? '#1a1200' : '#141416',
+                  opacity: m.is_verified ? 1 : 0.4,
+                }}
+              >
+                <Text className="text-text-primary font-bold font-sans">{m.display_name}</Text>
+                <Text className="text-text-muted text-xs font-sans">
+                  {m.is_verified ? m.method_type.toUpperCase() : 'Unverified — contact support'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         <TouchableOpacity
           onPress={() => {
             Alert.alert(
               'Confirm Withdrawal',
-              `Withdraw ${formatCurrency(withdrawAmount)} to your payout method?`,
+              `Withdraw ${formatCurrency(withdrawAmount)}?`,
               [
                 { text: 'Cancel', style: 'cancel' },
-                { text: 'Confirm', onPress: () => requestWithdrawal.mutate() },
-              ]
+                { text: 'Confirm', onPress: () => withdraw.mutate() },
+              ],
             );
           }}
-          disabled={requestWithdrawal.isPending || !isValid}
-          className="bg-white rounded-xl py-4 items-center"
+          disabled={withdraw.isPending || !isValid}
+          className="bg-text-primary rounded-xl py-4 items-center"
           style={{ opacity: isValid ? 1 : 0.4 }}
         >
-          {requestWithdrawal.isPending ? (
-            <ActivityIndicator color="black" />
+          {withdraw.isPending ? (
+            <ActivityIndicator color="#0A0A0C" />
           ) : (
-            <Text className="text-black font-black text-base">
+            <Text className="text-bg font-bold text-base">
               WITHDRAW {isValid ? formatCurrency(withdrawAmount) : ''}
             </Text>
           )}
         </TouchableOpacity>
 
-        <Text className="text-[#4B5563] text-xs text-center mt-4">
-          Withdrawals are processed via ACH or debit.{'\n'}1-3 business days. Min $5 per withdrawal.
+        <Text className="text-text-muted text-xs text-center mt-4 font-sans">
+          Withdrawals are processed via ACH or debit. 1–3 business days.
         </Text>
       </View>
     </SafeAreaView>

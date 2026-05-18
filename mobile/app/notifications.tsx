@@ -1,23 +1,11 @@
-import { useEffect } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
+import { COLORS } from '@/lib/utils';
 import type { UserNotification } from '@/lib/database.types';
-
-const NOTIF_ICONS: Record<string, string> = {
-  matchup_result: '🏆',
-  sidebet_result: '💰',
-  friend_request: '👥',
-  friend_accept: '✅',
-  lineup_lock: '⏰',
-  deposit_confirmed: '💳',
-  withdrawal_processed: '💸',
-  achievement_unlocked: '🎖️',
-  rank_up: '🚀',
-};
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -64,34 +52,32 @@ export default function NotificationsScreen() {
   const unreadCount = notifications?.filter((n) => !n.is_read).length ?? 0;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#0a0a0a]" edges={['top']}>
-      {/* Nav */}
+    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
       <View className="flex-row items-center justify-between px-5 pt-4 pb-3">
         <View className="flex-row items-center">
           <TouchableOpacity onPress={() => router.back()} className="mr-4">
-            <Text className="text-[#F59E0B] text-sm">← Back</Text>
+            <Text className="text-brand text-sm">← Back</Text>
           </TouchableOpacity>
-          <Text className="text-white font-black text-xl">
+          <Text className="text-text-primary font-bold text-xl">
             Notifications
             {unreadCount > 0 && (
-              <Text className="text-[#F59E0B]"> ({unreadCount})</Text>
+              <Text className="text-brand font-mono"> ({unreadCount})</Text>
             )}
           </Text>
         </View>
         {unreadCount > 0 && (
           <TouchableOpacity onPress={() => markAllRead.mutate()}>
-            <Text className="text-[#F59E0B] text-sm">Mark all read</Text>
+            <Text className="text-brand text-sm">Mark all read</Text>
           </TouchableOpacity>
         )}
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color="#F59E0B" className="mt-20" />
+        <ActivityIndicator color={COLORS.brand} className="mt-20" />
       ) : (notifications?.length ?? 0) === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <Text className="text-4xl mb-3">🔔</Text>
-          <Text className="text-white font-bold text-base">All caught up!</Text>
-          <Text className="text-[#71717A] text-sm mt-1">No notifications yet.</Text>
+          <Text className="text-text-primary font-bold text-base">All caught up</Text>
+          <Text className="text-text-muted text-sm mt-1 font-sans">No notifications yet.</Text>
         </View>
       ) : (
         <FlatList
@@ -103,29 +89,22 @@ export default function NotificationsScreen() {
               onPress={() => {
                 if (!item.is_read) markRead.mutate(item.id);
               }}
-              className="flex-row items-start py-4 border-b border-[#141414]"
+              className="flex-row items-start py-4 border-b border-surface-border"
               style={{ opacity: item.is_read ? 0.6 : 1 }}
             >
-              <View
-                className="w-10 h-10 rounded-full bg-[#1E1E1E] items-center justify-center mr-3 mt-0.5"
-              >
-                <Text className="text-xl">
-                  {NOTIF_ICONS[item.type] ?? '🔔'}
-                </Text>
-              </View>
               <View className="flex-1">
                 <View className="flex-row items-center gap-2">
-                  <Text className="text-white font-bold text-sm flex-1">{item.title}</Text>
+                  <Text className="text-text-primary font-bold text-sm flex-1">{item.title}</Text>
                   {!item.is_read && (
-                    <View className="w-2 h-2 rounded-full bg-[#F59E0B]" />
+                    <View className="w-2 h-2 rounded-full bg-brand" />
                   )}
                 </View>
                 {item.body && (
-                  <Text className="text-[#71717A] text-xs mt-0.5" numberOfLines={2}>
+                  <Text className="text-text-muted text-xs mt-0.5 font-sans" numberOfLines={2}>
                     {item.body}
                   </Text>
                 )}
-                <Text className="text-[#4B5563] text-xs mt-1">
+                <Text className="text-text-muted text-xs mt-1 font-mono">
                   {new Date(item.created_at).toLocaleDateString('en-US', {
                     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
                   })}
