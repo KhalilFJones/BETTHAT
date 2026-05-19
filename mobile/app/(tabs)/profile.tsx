@@ -23,25 +23,57 @@ export default function ProfileScreen() {
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
+  const [editUsername, setEditUsername] = useState('');
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
 
   const editMutation = useMutation({
-    mutationFn: async (displayName: string) => {
+    mutationFn: async ({ displayName, username }: { displayName: string; username: string }) => {
       if (!profile?.id) throw new Error('Not authenticated');
-      const { error } = await supabase
-        .from('profiles')
-        .update({ display_name: displayName.trim() })
-        .eq('id', profile.id);
+      const trimmedUsername = username.trim().toLowerCase();
+      const trimmedName = displayName.trim();
+      type ProfileUpdate = { display_name?: string; username?: string };
+      const updates: ProfileUpdate = {};
+      if (trimmedName !== profile.display_name) updates.display_name = trimmedName;
+      if (trimmedUsername !== profile.username) {
+        // Final uniqueness check in case of race
+        const { data: existing } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('username', trimmedUsername)
+          .neq('id', profile.id)
+          .maybeSingle();
+        if (existing) throw new Error('Username already taken. Please choose another.');
+        updates.username = trimmedUsername;
+      }
+      if (Object.keys(updates).length === 0) return undefined;
+      const { error } = await supabase.from('profiles').update(updates).eq('id', profile.id);
       if (error) throw error;
+      return updates;
     },
-    onSuccess: () => {
-      // Update Zustand store immediately so the header reflects the new name
-      // without waiting for a realtime event.
-      if (profile) setProfile({ ...profile, display_name: editName.trim() });
+    onSuccess: (updates) => {
+      if (profile && updates) setProfile({ ...profile, ...updates });
       qc.invalidateQueries({ queryKey: ['profile-detail', profile?.id] });
       setEditOpen(false);
     },
     onError: (err: any) => Alert.alert('Could not save', err?.message ?? 'Try again.'),
   });
+
+  // Debounced username availability check
+  const checkUsername = async (value: string) => {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed || trimmed === profile?.username) { setUsernameAvailable(null); return; }
+    if (trimmed.length < 3) { setUsernameAvailable(false); return; }
+    setCheckingUsername(true);
+    const { data } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('username', trimmed)
+      .neq('id', profile?.id ?? '')
+      .maybeSingle();
+    setCheckingUsername(false);
+    setUsernameAvailable(!data);
+  };
 
   const { data, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['profile-detail', profile?.id],
@@ -118,7 +150,12 @@ export default function ProfileScreen() {
           </View>
           <View style={{ flexDirection: 'row', gap: 14 }}>
             <Pressable
-              onPress={() => { setEditName(profile?.display_name ?? profile?.username ?? ''); setEditOpen(true); }}
+              onPress={() => {
+                setEditName(profile?.display_name ?? profile?.username ?? '');
+                setEditUsername(profile?.username ?? '');
+                setUsernameAvailable(null);
+                setEditOpen(true);
+              }}
               hitSlop={10}
             >
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={HG.muted} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
@@ -263,22 +300,65 @@ export default function ProfileScreen() {
         </Pressable>
       </ScrollView>
 
-      {/* Edit display name modal */}
+      {/* Edit profile modal */}
       <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
         <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
-          <View style={{ backgroundColor: HG.surface, borderRadius: 20, borderWidth: 1, borderColor: HG.hairline, padding: 24, gap: 18 }}>
+          <View style={{ backgroundColor: HG.surface, borderRadius: 20, borderWidth: 1, borderColor: HG.hairline, padding: 24, gap: 16 }}>
             <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: HG.ink, letterSpacing: -0.4 }}>
-              Edit <Text style={{ fontFamily: FONT.serifItalic, color: HG.sky }}>display name</Text>
+              Edit <Text style={{ fontFamily: FONT.serifItalic, color: HG.sky }}>profile</Text>
             </Text>
-            <TextInput
-              style={{ backgroundColor: HG.jet, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 14, height: 48, fontFamily: FONT.sans, fontSize: 15, color: HG.ink }}
-              value={editName}
-              onChangeText={setEditName}
-              placeholder="Your display name"
-              placeholderTextColor={HG.muted}
-              autoFocus
-              maxLength={32}
-            />
+
+            {/* Display name */}
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>Display name</Text>
+              <TextInput
+                style={{ backgroundColor: HG.jet, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 14, height: 48, fontFamily: FONT.sans, fontSize: 15, color: HG.ink }}
+                value={editName}
+                onChangeText={setEditName}
+                placeholder="Your display name"
+                placeholderTextColor={HG.muted}
+                maxLength={32}
+              />
+            </View>
+
+            {/* Username */}
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>Username</Text>
+              <View style={{ position: 'relative' }}>
+                <TextInput
+                  style={{
+                    backgroundColor: HG.jet, borderWidth: 1, borderRadius: 12,
+                    borderColor: usernameAvailable === false ? HG.down : usernameAvailable === true ? HG.up : HG.hairline,
+                    paddingHorizontal: 14, paddingRight: 40, height: 48, fontFamily: FONT.mono, fontSize: 15, color: HG.ink,
+                  }}
+                  value={editUsername}
+                  onChangeText={(v) => {
+                    const cleaned = v.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase();
+                    setEditUsername(cleaned);
+                    setUsernameAvailable(null);
+                  }}
+                  onEndEditing={() => checkUsername(editUsername)}
+                  onBlur={() => checkUsername(editUsername)}
+                  placeholder={profile?.username ?? 'username'}
+                  placeholderTextColor={HG.muted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  maxLength={20}
+                />
+                {/* Availability indicator */}
+                {checkingUsername ? (
+                  <ActivityIndicator size="small" color={HG.muted} style={{ position: 'absolute', right: 14, top: 14 }} />
+                ) : usernameAvailable === true ? (
+                  <Text style={{ position: 'absolute', right: 14, top: 15, fontFamily: FONT.monoBold, fontSize: 13, color: HG.up }}>✓</Text>
+                ) : usernameAvailable === false ? (
+                  <Text style={{ position: 'absolute', right: 14, top: 15, fontFamily: FONT.monoBold, fontSize: 13, color: HG.down }}>✗</Text>
+                ) : null}
+              </View>
+              {usernameAvailable === false && editUsername.length >= 3 && (
+                <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: HG.down }}>Username taken or invalid (min 3 chars, a–z 0–9 _)</Text>
+              )}
+            </View>
+
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Pressable
                 onPress={() => setEditOpen(false)}
@@ -287,9 +367,12 @@ export default function ProfileScreen() {
                 <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.2 }}>Cancel</Text>
               </Pressable>
               <Pressable
-                onPress={() => { if (editName.trim()) editMutation.mutate(editName); }}
-                disabled={editMutation.isPending || !editName.trim()}
-                style={{ flex: 1, height: 46, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: editName.trim() ? 1 : 0.4 }}
+                onPress={() => {
+                  if (usernameAvailable === false) return;
+                  editMutation.mutate({ displayName: editName, username: editUsername });
+                }}
+                disabled={editMutation.isPending || usernameAvailable === false}
+                style={{ flex: 1, height: 46, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: usernameAvailable === false ? 0.4 : 1 }}
               >
                 {editMutation.isPending ? (
                   <ActivityIndicator color={HG.jet} size="small" />

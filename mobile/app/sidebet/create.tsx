@@ -13,7 +13,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { HG, FONT, fmtPrice, playerInitials, MIN_WAGER, MAX_WAGER, SLATE_DATE_FALLBACK } from '@/lib/holygrail';
+import { HG, FONT, fmtPrice, playerInitials, MIN_WAGER, MAX_WAGER } from '@/lib/holygrail';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 const STATS = [
@@ -46,8 +46,17 @@ export default function SidebetCreateScreen() {
 
   // Tonight's draftable players + prop lines (joined)
   const { data: players, isLoading } = useQuery({
-    queryKey: ['sidebet-players', SLATE_DATE_FALLBACK],
+    queryKey: ['sidebet-players'],
     queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: dateRow } = await supabase
+        .from('player_game_availability')
+        .select('game_date')
+        .lte('game_date', today)
+        .order('game_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const slateDate = (dateRow as any)?.game_date ?? today;
       const { data, error } = await supabase
         .from('player_game_availability')
         .select(`
@@ -55,7 +64,7 @@ export default function SidebetCreateScreen() {
           nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position),
           nba_games!inner(id, home_team_abbreviation, away_team_abbreviation, status, tip_off_time)
         `)
-        .eq('game_date', SLATE_DATE_FALLBACK)
+        .eq('game_date', slateDate)
         .eq('is_draftable', true);
       if (error) throw error;
       return (data ?? []).map((row: any) => ({

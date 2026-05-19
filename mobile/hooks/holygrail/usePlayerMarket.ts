@@ -88,6 +88,17 @@ export interface MarketData {
 
 async function fetchMarket(userId: string): Promise<MarketData> {
   const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Find the most recent slate that has player availability (handles off-days / dev data).
+  const { data: dateRow } = await supabase
+    .from('player_game_availability')
+    .select('game_date')
+    .lte('game_date', today)
+    .order('game_date', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const slateDate = (dateRow as any)?.game_date ?? today;
 
   const [tonightQ, historyQ, lineupQ, trendingQ] = await Promise.all([
     supabase
@@ -101,7 +112,7 @@ async function fetchMarket(userId: string): Promise<MarketData> {
           player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, demand_count_1h, total_selections)
         )
       `)
-      .eq('game_date', SLATE_DATE_FALLBACK)
+      .eq('game_date', slateDate)
       .eq('is_draftable', true),
 
     supabase
