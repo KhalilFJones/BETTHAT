@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>BETTHAT — Player Market</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display:ital@0;1&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================================
+   BETTHAT — Holy Grail V2 design tokens (dark mode default)
+   ============================================================================ */
+:root {
+  /* Surfaces */
+  --jet:        #0A0A0C;
+  --surface:    #141416;
+  --elevated:   #1B2A4A;
+  --elevated-8: rgba(27, 42, 74, 0.32);
+  --hairline:   rgba(255, 255, 255, 0.08);
+  --hairline-2: rgba(255, 255, 255, 0.14);
+  --input-bg:   #0D0D10;
+
+  /* Ink */
+  --ink:        #E8EDF2;
+  --ink-2:      #C2C8D0;
+  --muted:      #8A93A6;
+  --muted-2:    #5C6473;
+  --quiet:      rgba(232, 237, 242, 0.32);
+
+  /* Accents */
+  --sky:        #5B9BD5;
+  --sky-soft:   rgba(91, 155, 213, 0.12);
+  --sky-edge:   rgba(91, 155, 213, 0.28);
+  --steel:      #3A5F8A;
+
+  /* Direction (PRICE ONLY — never UI chrome) */
+  --up:         #26D782;
+  --up-soft:    rgba(38, 215, 130, 0.12);
+  --down:       #F24236;
+  --down-soft:  rgba(242, 66, 54, 0.12);
+
+  /* Type */
+  --sans:   'DM Sans', system-ui, -apple-system, sans-serif;
+  --serif:  'DM Serif Display', 'Times New Roman', serif;
+  --mono:   'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Spacing */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-7: 32px; --s-8: 48px;
+
+  /* Radius */
+  --r-input: 14px; --r-card: 16px; --r-pill: 999px;
+
+  /* Page (review surrounding) */
+  --page-bg:    #0E0F12;
+  --page-ink:   #B5BAC4;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { background: var(--page-bg); color: var(--page-ink); font-family: var(--sans); -webkit-font-smoothing: antialiased; }
+body { min-height: 100vh; padding: 32px 20px 80px; }
+button { font: inherit; color: inherit; background: transparent; border: 0; cursor: pointer; }
+input { font: inherit; color: inherit; background: transparent; border: 0; outline: 0; }
+img, svg { display: block; }
+a { color: inherit; text-decoration: none; }
+
+/* ============================================================================
+   Page header (review chrome)
+   ============================================================================ */
+.review-header {
+  max-width: 1180px;
+  margin: 0 auto var(--s-7);
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: var(--s-6);
+  padding: 0 var(--s-2);
+}
+.review-meta { font-family: var(--mono); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted-2); }
+.review-title { font-family: var(--serif); font-size: 22px; color: var(--ink); letter-spacing: -0.005em; }
+.review-title em { font-style: italic; color: var(--muted); font-weight: 300; }
+
+/* ============================================================================
+   Two-column layout: iPhone frame + desktop browser frame
+   ============================================================================ */
+.frames {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: minmax(375px, 425px) 1fr;
+  gap: 56px;
+  align-items: start;
+  justify-content: center;
+}
+@media (max-width: 980px) { .frames { grid-template-columns: 1fr; } }
+
+.frame-label {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--muted-2); margin-bottom: var(--s-3); padding-left: var(--s-2);
+}
+
+/* iPhone frame */
+.iphone {
+  width: 411px;       /* 375 inner + 18px bezel either side */
+  height: 848px;
+  border-radius: 56px;
+  background: linear-gradient(160deg, #1d1d1f 0%, #0a0a0c 100%);
+  padding: 18px;
+  position: relative;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 30px 80px rgba(0,0,0,0.55);
+  margin: 0 auto;
+}
+.iphone::before {
+  content: ''; position: absolute; left: 50%; top: 22px; transform: translateX(-50%);
+  width: 116px; height: 32px; background: #050506; border-radius: 18px; z-index: 5;
+}
+.iphone .screen { width: 375px; height: 812px; border-radius: 42px; overflow: hidden; background: var(--jet); position: relative; }
+
+/* Desktop browser frame */
+.browser {
+  width: 100%; max-width: 720px;
+  border-radius: 14px; overflow: hidden;
+  background: #1c1d20;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  margin: 0 auto;
+  border: 1px solid rgba(255,255,255,0.04);
+}
+.browser-bar { height: 40px; padding: 0 14px; display: flex; align-items: center; gap: 10px; background: #1c1d20; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.browser-dot { width: 12px; height: 12px; border-radius: 50%; }
+.browser-dot.r { background: #ff5f57; } .browser-dot.y { background: #febc2e; } .browser-dot.g { background: #28c840; }
+.browser-url {
+  margin-left: 16px; flex: 1; max-width: 360px;
+  background: #2b2c30; border-radius: 6px; padding: 6px 12px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.browser-stage { background: var(--page-bg); padding: 32px; display: flex; justify-content: center; }
+.browser-stage .screen { width: 375px; height: 812px; border-radius: 28px; overflow: hidden; background: var(--jet); border: 1px solid rgba(255,255,255,0.03); }
+
+/* ============================================================================
+   SCREEN — Player Market
+   ============================================================================ */
+.screen { color: var(--ink); font-size: 14px; line-height: 1.4; display: flex; flex-direction: column; }
+
+/* Status bar */
+.status-bar {
+  height: 38px; padding: 0 24px; display: flex; align-items: center; justify-content: space-between;
+  font-family: var(--mono); font-size: 13px; color: var(--ink); flex-shrink: 0;
+  letter-spacing: 0.02em; padding-top: 8px;
+}
+.status-icons { display: flex; align-items: center; gap: 6px; opacity: 0.85; }
+.status-icons svg { width: 16px; height: 12px; }
+
+/* Top bar */
+.top-bar {
+  height: 48px; padding: 0 18px; display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.top-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; color: var(--ink-2); border-radius: var(--r-pill); }
+.top-icon:hover { background: var(--surface); }
+.top-icon svg { width: 18px; height: 18px; }
+.brand-mark { font-family: var(--mono); font-weight: 600; font-size: 13px; letter-spacing: 0.22em; color: var(--ink); }
+.wallet-balance {
+  font-family: var(--mono); font-weight: 500; font-size: 13px; color: var(--ink);
+  padding: 7px 13px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-pill);
+  display: flex; align-items: center; gap: 6px;
+}
+.wallet-balance::before { content: ''; width: 5px; height: 5px; background: var(--sky); border-radius: 50%; }
+
+/* Ticker */
+.ticker {
+  height: 36px; overflow: hidden; position: relative;
+  background: var(--surface);
+  border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline);
+  flex-shrink: 0;
+}
+.ticker-track {
+  position: absolute; top: 0; left: 0; height: 100%;
+  display: flex; align-items: center; gap: 36px; padding: 0 24px;
+  white-space: nowrap;
+  animation: tickerScroll 90s linear infinite;
+  will-change: transform;
+}
+.ticker:hover .ticker-track { animation-play-state: paused; }
+@keyframes tickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.tick { display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-size: 12px; }
+.tick-handle { color: var(--sky); font-weight: 500; letter-spacing: 0.04em; }
+.tick-price { color: var(--ink); font-weight: 500; }
+.tick-delta { font-weight: 500; }
+.tick-delta.up { color: var(--up); }
+.tick-delta.down { color: var(--down); }
+
+/* Scroll body */
+.scroll {
+  flex: 1; overflow-y: auto; overscroll-behavior: contain;
+  padding-bottom: 220px; /* room for sticky lineup bar + nav */
+}
+.scroll::-webkit-scrollbar { width: 0; }
+
+/* Search */
+.search-wrap { padding: 18px 18px 8px; }
+.search {
+  position: relative;
+  background: var(--input-bg);
+  border-radius: var(--r-input);
+  /* "Carved/inset" treatment — Holy Grail Screen 02 spec */
+  box-shadow:
+    inset 0 1px 0 rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1px 0 rgba(255, 255, 255, 0.03);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  height: 44px;
+}
+.search svg { width: 16px; height: 16px; color: var(--muted); flex-shrink: 0; }
+.search input { flex: 1; height: 100%; font-size: 14px; font-weight: 400; color: var(--ink); }
+.search input::placeholder { color: var(--muted); font-weight: 300; }
+
+/* Chips */
+.chips {
+  display: flex; gap: 8px; padding: 14px 18px 8px;
+  overflow-x: auto;
+}
+.chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0;
+  height: 32px; padding: 0 14px; border-radius: var(--r-pill);
+  font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: 0.08em;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  display: inline-flex; align-items: center;
+  transition: color 180ms, background-color 180ms, border-color 180ms;
+}
+.chip[aria-pressed="true"] { background: var(--sky); color: var(--jet); border-color: var(--sky); font-weight: 600; }
+.chip:not([aria-pressed="true"]):hover { color: var(--ink-2); border-color: var(--hairline-2); }
+
+/* Section headers */
+.section-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  padding: 22px 18px 12px;
+}
+.section-head h2 { font-family: var(--serif); font-weight: 400; font-size: 22px; color: var(--ink); letter-spacing: -0.005em; }
+.section-head h2 em { font-style: italic; color: var(--muted); font-weight: 300; }
+.section-head .label { font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+
+/* Trending carousel */
+.carousel { display: flex; gap: 12px; padding: 0 18px 4px; overflow-x: auto; scroll-snap-type: x mandatory; }
+.carousel::-webkit-scrollbar { display: none; }
+.trend-card {
+  flex-shrink: 0; width: 168px;
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--r-card);
+  padding: 14px;
+  scroll-snap-align: start;
+  display: flex; flex-direction: column; gap: 10px;
+  transition: border-color 180ms, transform 180ms ease-out;
+}
+.trend-card:hover { border-color: var(--hairline-2); }
+.trend-card:active { transform: translateY(1px); }
+.trend-top { display: flex; gap: 10px; align-items: center; }
+.trend-name { font-size: 13px; font-weight: 500; color: var(--ink); line-height: 1.25; }
+.trend-handle { font-family: var(--mono); font-size: 10px; color: var(--sky); letter-spacing: 0.04em; margin-top: 2px; }
+.trend-bottom { display: flex; align-items: baseline; justify-content: space-between; }
+.trend-price { font-family: var(--mono); font-size: 16px; font-weight: 500; color: var(--ink); }
+.trend-delta { font-family: var(--mono); font-size: 11px; font-weight: 500; }
+.trend-delta.up { color: var(--up); }
+.trend-delta.down { color: var(--down); }
+
+/* All players list */
+.list { display: flex; flex-direction: column; }
+.row {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center; gap: 12px;
+  padding: 14px 18px;
+  border-top: 1px solid var(--hairline);
+  position: relative;
+}
+.row:first-child { border-top: 0; }
+.row:hover { background: rgba(255, 255, 255, 0.015); }
+
+/* Monogram tile */
+.tile {
+  width: 52px; height: 52px; border-radius: 12px;
+  background: var(--elevated-8);
+  border: 1px solid var(--hairline);
+  display: flex; align-items: center; justify-content: center;
+  position: relative;
+  font-weight: 500;
+}
+.tile-initials { font-family: var(--sans); font-size: 16px; font-weight: 600; color: var(--ink); letter-spacing: -0.01em; }
+.tile-jersey {
+  position: absolute; right: -4px; bottom: -4px;
+  font-family: var(--mono); font-size: 9px; font-weight: 600;
+  background: var(--jet); color: var(--sky);
+  padding: 2px 5px; border-radius: 6px;
+  border: 1px solid var(--hairline);
+  min-width: 18px; text-align: center;
+}
+
+/* Row middle */
+.row-mid { display: flex; flex-direction: column; min-width: 0; }
+.row-name { font-size: 15px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-meta { display: flex; align-items: center; gap: 10px; margin-top: 3px; }
+.row-handle { font-family: var(--mono); font-size: 10px; color: var(--sky); letter-spacing: 0.04em; }
+.row-tp { font-size: 12px; color: var(--muted); font-weight: 400; }
+.row-tp .dot { display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: 0.5; margin: 0 6px 2px; vertical-align: middle; }
+.injury-flag {
+  margin-left: 6px; padding: 1px 6px; border-radius: 4px;
+  font-family: var(--mono); font-size: 9px; font-weight: 500; letter-spacing: 0.08em;
+  background: rgba(242, 66, 54, 0.08); color: var(--down);
+  text-transform: uppercase;
+}
+
+/* Row right cluster (sparkline + price + add) */
+.row-right { display: flex; align-items: center; gap: 14px; }
+.spark { width: 56px; height: 22px; flex-shrink: 0; }
+.spark path { fill: none; stroke-width: 1.4; }
+.spark.up path { stroke: var(--up); }
+.spark.down path { stroke: var(--down); }
+.spark.flat path { stroke: var(--muted); }
+
+.row-pricecol { display: flex; flex-direction: column; align-items: flex-end; min-width: 64px; }
+.row-price { font-family: var(--mono); font-size: 17px; font-weight: 500; color: var(--ink); letter-spacing: -0.005em; }
+.row-pct { font-family: var(--mono); font-size: 11px; font-weight: 500; margin-top: 1px; }
+.row-pct.up { color: var(--up); }
+.row-pct.down { color: var(--down); }
+
+.add-btn {
+  height: 32px; min-width: 64px; padding: 0 14px; border-radius: var(--r-pill);
+  font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase;
+  background: var(--surface); color: var(--ink-2);
+  border: 1px solid var(--hairline-2);
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  transition: background-color 180ms, color 180ms, border-color 180ms;
+}
+.add-btn:hover { color: var(--ink); border-color: var(--sky-edge); }
+.add-btn[data-state="added"] { background: var(--sky); color: var(--jet); border-color: var(--sky); }
+.add-btn[data-state="locked"] { color: var(--muted-2); border-color: var(--hairline); cursor: not-allowed; }
+
+/* Locked / out player row */
+.row[data-locked="true"] .row-name,
+.row[data-locked="true"] .row-price,
+.row[data-locked="true"] .tile-initials { color: var(--muted-2); }
+.row[data-locked="true"] .row-pct { color: var(--muted-2); }
+
+/* Sticky lineup builder */
+.sticky-bar {
+  position: absolute; left: 0; right: 0; bottom: 88px;
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+  padding: 14px 18px 12px;
+  z-index: 5;
+  /* gradient fade above to imply scrolling content beneath */
+  box-shadow: 0 -16px 24px rgba(10, 10, 12, 0.65);
+}
+.sticky-bar.empty { display: none; }
+.sticky-row1 { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.sticky-label {
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--muted);
+  display: flex; align-items: center; gap: 10px;
+}
+.sticky-count {
+  font-family: var(--mono); font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  background: var(--elevated-8); color: var(--ink);
+  padding: 3px 8px; border-radius: var(--r-pill); border: 1px solid var(--sky-edge);
+}
+.sticky-cap { font-family: var(--mono); font-size: 11px; color: var(--muted); display: flex; align-items: baseline; gap: 6px; }
+.sticky-cap span { color: var(--ink); font-weight: 500; }
+
+.sticky-slots { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+.slot {
+  height: 44px; border-radius: 10px;
+  background: var(--input-bg);
+  border: 1px dashed var(--hairline-2);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--mono); font-size: 10px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--muted-2);
+}
+.slot[data-filled="true"] {
+  background: var(--surface);
+  border: 1px solid var(--sky-edge);
+  flex-direction: column; gap: 1px;
+  padding: 0 10px;
+}
+.slot-name { font-family: var(--sans); font-size: 12px; font-weight: 500; color: var(--ink); letter-spacing: 0; text-transform: none; }
+.slot-price { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+.sticky-cta {
+  width: 100%; height: 48px; border-radius: var(--r-pill);
+  font-family: var(--mono); font-size: 12px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+  background: var(--sky); color: var(--jet);
+  display: flex; align-items: center; justify-content: center;
+  transition: background-color 180ms, transform 180ms ease-out;
+}
+.sticky-cta:hover { background: #6FAEE3; }
+.sticky-cta:active { transform: translateY(1px); }
+.sticky-cta[data-state="disabled"] { background: var(--surface); color: var(--muted-2); border: 1px solid var(--hairline); cursor: not-allowed; }
+
+/* Bottom nav */
+.nav {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: var(--jet);
+  border-top: 1px solid var(--hairline);
+  height: 88px;
+  padding: 8px 12px 22px;
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  z-index: 6;
+}
+.nav-tab {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  color: var(--muted);
+  border-radius: 12px; height: 100%;
+  transition: color 180ms;
+}
+.nav-tab:hover { color: var(--ink-2); }
+.nav-tab[aria-current="page"] { color: var(--sky); }
+.nav-tab svg { width: 22px; height: 22px; }
+.nav-tab span { font-family: var(--sans); font-size: 10px; font-weight: 500; letter-spacing: 0.04em; }
+
+/* Loading skeleton */
+.skel {
+  background: linear-gradient(90deg, var(--surface) 0%, #1c1d22 50%, var(--surface) 100%);
+  background-size: 240% 100%;
+  animation: skelSlide 1.4s linear infinite;
+  border-radius: 8px;
+}
+@keyframes skelSlide { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.skel-row { padding: 14px 18px; border-top: 1px solid var(--hairline); display: flex; gap: 12px; align-items: center; }
+.skel-row:first-child { border-top: 0; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track { animation-duration: 240s; }
+  .skel { animation: none; }
+}
+
+/* Focus visibility */
+:focus-visible { outline: 2px solid var(--sky); outline-offset: 3px; border-radius: 4px; }
+.add-btn:focus-visible, .chip:focus-visible, .nav-tab:focus-visible { outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<header class="review-header">
+  <div>
+    <div class="review-meta">Holy Grail V2 · Phase 1 Pilot · Dark</div>
+    <div class="review-title">Player <em>Market</em> · Screen 04</div>
+  </div>
+  <div class="review-meta">375 × 812 · live data · supabase</div>
+</header>
+
+<div class="frames">
+  <!-- iPhone frame -->
+  <div>
+    <div class="frame-label">iPhone 13 mini · 375 × 812</div>
+    <div class="iphone">
+      <div class="screen" id="screen-iphone"></div>
+    </div>
+  </div>
+
+  <!-- Desktop browser frame -->
+  <div>
+    <div class="frame-label">Desktop preview · macOS chrome</div>
+    <div class="browser">
+      <div class="browser-bar">
+        <div class="browser-dot r"></div>
+        <div class="browser-dot y"></div>
+        <div class="browser-dot g"></div>
+        <div class="browser-url">betthat.app/market</div>
+      </div>
+      <div class="browser-stage">
+        <div class="screen" id="screen-desktop"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===========================================================================
+     Screen template (rendered into BOTH frames)
+     =========================================================================== -->
+<template id="screen-tmpl">
+  <div class="status-bar">
+    <span class="time" data-now-time>9:41</span>
+    <span class="status-icons">
+      <svg viewBox="0 0 18 12" fill="currentColor" aria-hidden="true"><rect x="0" y="8" width="3" height="4" rx="0.5"/><rect x="5" y="6" width="3" height="6" rx="0.5"/><rect x="10" y="3" width="3" height="9" rx="0.5"/><rect x="15" y="0" width="3" height="12" rx="0.5"/></svg>
+      <svg viewBox="0 0 18 12" fill="currentColor" aria-hidden="true"><path d="M9 11.5a1 1 0 100-2 1 1 0 000 2zm0-4c1.4 0 2.7.5 3.7 1.4l1.4-1.4A8 8 0 009 5.1a8 8 0 00-5.1 2.4l1.4 1.4A5.5 5.5 0 019 7.5zm0-4a10 10 0 016.9 2.7l1.4-1.4A12 12 0 009 1.5 12 12 0 00.7 4.8l1.4 1.4A10 10 0 019 3.5z"/></svg>
+      <svg viewBox="0 0 22 12" fill="none" stroke="currentColor" stroke-width="1" aria-hidden="true"><rect x="0.5" y="0.5" width="18" height="11" rx="2.5"/><rect x="2" y="2" width="13" height="8" rx="1" fill="currentColor"/><rect x="19.5" y="4" width="1.5" height="4" rx="0.5" fill="currentColor"/></svg>
+    </span>
+  </div>
+
+  <div class="top-bar">
+    <button class="top-icon" aria-label="Friends">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    </button>
+    <span class="brand-mark">BETTHAT</span>
+    <button class="wallet-balance" aria-label="Open wallet">
+      <span data-wallet>$—.—</span>
+    </button>
+  </div>
+
+  <div class="ticker">
+    <div class="ticker-track" data-ticker></div>
+  </div>
+
+  <div class="scroll" data-scroll>
+    <div class="search-wrap">
+      <label class="search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" placeholder="Search players or tickers" data-search aria-label="Search players or tickers" />
+      </label>
+    </div>
+
+    <div class="chips" role="tablist" aria-label="Position filter">
+      <button class="chip" role="tab" aria-pressed="true"  data-pos="ALL">All</button>
+      <button class="chip" role="tab" aria-pressed="false" data-pos="PG">PG</button>
+      <button class="chip" role="tab" aria-pressed="false" data-pos="SG">SG</button>
+      <button class="chip" role="tab" aria-pressed="false" data-pos="SF">SF</button>
+      <button class="chip" role="tab" aria-pressed="false" data-pos="PF">PF</button>
+      <button class="chip" role="tab" aria-pressed="false" data-pos="C">C</button>
+    </div>
+
+    <div class="section-head">
+      <h2><em>Trending</em></h2>
+      <span class="label">Last 4h</span>
+    </div>
+    <div class="carousel" data-trending></div>
+
+    <div class="section-head">
+      <h2>Playing <em>Tonight</em></h2>
+      <span class="label" data-list-count>—</span>
+    </div>
+    <div class="list" data-list></div>
+  </div>
+
+  <div class="sticky-bar empty" data-sticky>
+    <div class="sticky-row1">
+      <span class="sticky-label">Your lineup <span class="sticky-count" data-sticky-count>0 / 3</span></span>
+      <span class="sticky-cap">Cap left <span data-sticky-cap>$500</span></span>
+    </div>
+    <div class="sticky-slots" data-sticky-slots>
+      <div class="slot">Pick</div>
+      <div class="slot">Pick</div>
+      <div class="slot">Pick</div>
+    </div>
+    <button class="sticky-cta" data-sticky-cta data-state="disabled">Pick 3 more players</button>
+  </div>
+
+  <nav class="nav" aria-label="Primary">
+    <a href="#" class="nav-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 12 9-9 9 9"/><path d="M5 10v10h14V10"/></svg><span>Home</span></a>
+    <a href="#" class="nav-tab" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M14 7h7v7"/></svg><span>Market</span></a>
+    <a href="#" class="nav-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18M3 12h18"/></svg><span>Matchups</span></a>
+    <a href="#" class="nav-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg><span>Sidebets</span></a>
+    <a href="#" class="nav-tab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span>Profile</span></a>
+  </nav>
+</template>
+
+<!-- ===========================================================================
+     Supabase JS + app
+     =========================================================================== -->
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
+
+// =============================================================================
+// CONFIG
+// =============================================================================
+const SUPABASE_URL = 'https://tynhpwljqmxakcqfxsxt.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR5bmhwd2xqcW14YWtjcWZ4c3h0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1Mjk2MTEsImV4cCI6MjA5NDEwNTYxMX0.06_iIi-v081O-9QWkfumTbNk3HLx88cUvLboRrv4OOk';
+
+// PROTOTYPE-ONLY demo credentials. Replace with real Supabase Auth flow before TestFlight.
+const DEMO_EMAIL = 'demo@betthat.local';
+const DEMO_PASSWORD = 'BetThatDemo!2026';
+
+const SLATE_DATE = '2026-05-15';
+const SALARY_CAP = 500;
+const LINEUP_SIZE = 3;
+
+const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, storageKey: 'bt-pm-demo' }
+});
+
+// =============================================================================
+// AUTH — sign in as the demo user
+// =============================================================================
+async function ensureSignedIn() {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session?.user?.email === DEMO_EMAIL) return session.user;
+
+  const { data, error } = await sb.auth.signInWithPassword({
+    email: DEMO_EMAIL, password: DEMO_PASSWORD
+  });
+  if (error) throw new Error('Demo sign-in failed: ' + error.message);
+  return data.user;
+}
+
+// =============================================================================
+// FETCH — every screen-relevant query in parallel
+// =============================================================================
+async function fetchAll(userId) {
+  const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
+
+  const [walletQ, tonightQ, historyQ, lineupQ, trendingQ] = await Promise.all([
+    sb.from('wallets').select('balance').eq('user_id', userId).maybeSingle(),
+
+    // Players in tonight's slate, joined with prices
+    sb.from('player_game_availability')
+      .select(`
+        is_draftable,
+        nba_players!inner(
+          id, full_name, first_name, last_name, position, jersey_number,
+          team_abbreviation, ticker_handle, salary_tier, is_injured, injury_note,
+          season_avg_fpts, last5_avg_fpts,
+          player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, demand_count_1h, total_selections)
+        )
+      `)
+      .eq('game_date', SLATE_DATE)
+      .eq('is_draftable', true),
+
+    sb.from('price_history')
+      .select('player_id, price, recorded_at')
+      .gte('recorded_at', sixHoursAgo)
+      .order('recorded_at', { ascending: true }),
+
+    // In-progress lineup for the demo user
+    sb.from('lineups')
+      .select(`
+        id, total_cap_used, status, created_at,
+        lineup_players(
+          slot_number, frozen_price,
+          nba_players(id, full_name, last_name, ticker_handle, position, jersey_number, team_abbreviation)
+        )
+      `)
+      .eq('user_id', userId).eq('status', 'building').limit(1).maybeSingle(),
+
+    // Trending players (most demand in last 4h is captured in player_prices.demand_count_1h here)
+    sb.from('player_prices')
+      .select('player_id, current_price, price_change_pct_24h, demand_count_1h, total_selections, nba_players!inner(id, full_name, last_name, ticker_handle, jersey_number, team_abbreviation, position)')
+      .order('demand_count_1h', { ascending: false })
+      .limit(8)
+  ]);
+
+  for (const q of [walletQ, tonightQ, historyQ, lineupQ, trendingQ]) {
+    if (q.error) console.warn('Query error:', q.error.message);
+  }
+
+  return {
+    wallet: walletQ.data,
+    tonight: (tonightQ.data || []).map(r => r.nba_players),
+    history: historyQ.data || [],
+    lineup: lineupQ.data,
+    trending: trendingQ.data || []
+  };
+}
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+function fmtPrice(n) {
+  if (n == null) return '$—';
+  return '$' + Number(n).toFixed(2);
+}
+function fmtPct(n) {
+  if (n == null) return '—';
+  const v = Number(n);
+  return (v >= 0 ? '↑' : '↓') + ' ' + Math.abs(v).toFixed(1) + '%';
+}
+function initialsFor(p) {
+  const fi = (p.first_name || p.full_name?.split(' ')[0] || '?').charAt(0);
+  const li = (p.last_name || p.full_name?.split(' ').slice(-1)[0] || '?').charAt(0);
+  return (fi + li).toUpperCase();
+}
+function lastNameFor(p) {
+  return p.last_name || p.full_name?.split(' ').slice(-1)[0] || '';
+}
+
+function buildSparkPath(prices, w = 56, h = 22, pad = 2) {
+  if (!prices || prices.length < 2) return null;
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min || 1;
+  const innerW = w - pad * 2;
+  const innerH = h - pad * 2;
+  const step = innerW / (prices.length - 1);
+  return prices.map((p, i) => {
+    const x = pad + i * step;
+    const y = pad + innerH - ((p - min) / range) * innerH;
+    return (i === 0 ? 'M' : 'L') + x.toFixed(2) + ',' + y.toFixed(2);
+  }).join(' ');
+}
+function sparkDirection(prices) {
+  if (!prices || prices.length < 2) return 'flat';
+  const last = prices[prices.length - 1];
+  const first = prices[0];
+  if (last > first * 1.005) return 'up';
+  if (last < first * 0.995) return 'down';
+  return 'flat';
+}
+
+// =============================================================================
+// RENDER
+// =============================================================================
+function renderInto(rootEl, data) {
+  // Clone the screen template
+  const tmpl = document.getElementById('screen-tmpl');
+  rootEl.innerHTML = '';
+  rootEl.appendChild(tmpl.content.cloneNode(true));
+
+  // ----- Wallet
+  rootEl.querySelector('[data-wallet]').textContent = fmtPrice(data.wallet?.balance);
+
+  // ----- Time (live)
+  const now = new Date();
+  rootEl.querySelector('[data-now-time]').textContent =
+    String(((now.getHours() + 11) % 12) + 1) + ':' + String(now.getMinutes()).padStart(2, '0');
+
+  // ----- Group history by player → ordered price array
+  const histByPlayer = new Map();
+  for (const h of data.history) {
+    if (!histByPlayer.has(h.player_id)) histByPlayer.set(h.player_id, []);
+    histByPlayer.get(h.player_id).push(Number(h.price));
+  }
+
+  // ----- Ticker: top movers (largest |%| change), 16 entries, doubled for seamless scroll
+  const tickerPlayers = data.tonight
+    .filter(p => p.player_prices && p.player_prices[0])
+    .map(p => ({ p, pp: p.player_prices[0] }))
+    .filter(x => x.pp.price_change_pct_24h != null)
+    .sort((a, b) => Math.abs(b.pp.price_change_pct_24h) - Math.abs(a.pp.price_change_pct_24h))
+    .slice(0, 16);
+
+  const tickerTrack = rootEl.querySelector('[data-ticker]');
+  const tickerHTML = tickerPlayers.map(({ p, pp }) => {
+    const dir = pp.price_change_pct_24h >= 0 ? 'up' : 'down';
+    const arrow = dir === 'up' ? '↑' : '↓';
+    return `<span class="tick"><span class="tick-handle">${p.ticker_handle || lastNameFor(p).toUpperCase()}</span><span class="tick-price">${fmtPrice(pp.current_price)}</span><span class="tick-delta ${dir}">${arrow}${Math.abs(pp.price_change_pct_24h).toFixed(1)}%</span></span>`;
+  }).join('');
+  tickerTrack.innerHTML = tickerHTML + tickerHTML; // duplicated for the -50% loop
+
+  // ----- Trending carousel — top 6 by demand
+  const trending = data.trending.slice(0, 6);
+  const carousel = rootEl.querySelector('[data-trending]');
+  carousel.innerHTML = trending.map(t => {
+    const p = t.nba_players;
+    const dir = (t.price_change_pct_24h ?? 0) >= 0 ? 'up' : 'down';
+    return `
+      <div class="trend-card" role="button" tabindex="0">
+        <div class="trend-top">
+          <div class="tile" style="width:38px;height:38px;border-radius:9px;">
+            <span class="tile-initials" style="font-size:13px;">${initialsFor(p)}</span>
+          </div>
+          <div>
+            <div class="trend-name">${lastNameFor(p)}</div>
+            <div class="trend-handle">${p.ticker_handle || ''}</div>
+          </div>
+        </div>
+        <div class="trend-bottom">
+          <span class="trend-price">${fmtPrice(t.current_price)}</span>
+          <span class="trend-delta ${dir}">${fmtPct(t.price_change_pct_24h)}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  // ----- All players list (sorted: stars first by current_price desc; locked at bottom)
+  const list = rootEl.querySelector('[data-list]');
+  const players = data.tonight
+    .filter(p => p.player_prices && p.player_prices[0])
+    .sort((a, b) => {
+      const al = a.player_prices[0].is_locked ? 1 : 0;
+      const bl = b.player_prices[0].is_locked ? 1 : 0;
+      if (al !== bl) return al - bl;
+      return Number(b.player_prices[0].current_price) - Number(a.player_prices[0].current_price);
+    });
+
+  rootEl.querySelector('[data-list-count]').textContent =
+    String(players.length) + ' players';
+
+  // Track current pick state per player id (driven by lineup data)
+  const pickedIds = new Set();
+  if (data.lineup?.lineup_players) {
+    for (const lp of data.lineup.lineup_players) pickedIds.add(lp.nba_players.id);
+  }
+
+  list.innerHTML = players.map(p => {
+    const pp = p.player_prices[0];
+    const hist = histByPlayer.get(p.id) || [];
+    const dir = sparkDirection(hist);
+    const path = buildSparkPath(hist) || '';
+    const pctDir = (pp.price_change_pct_24h ?? 0) >= 0 ? 'up' : 'down';
+    const isPicked = pickedIds.has(p.id);
+    const isLocked = pp.is_locked;
+    const addState = isLocked ? 'locked' : (isPicked ? 'added' : 'add');
+    const addLabel = isLocked ? 'Out' : (isPicked ? 'Added' : '+ Add');
+
+    return `
+      <article class="row" data-player-id="${p.id}" data-locked="${isLocked}">
+        <div class="tile">
+          <span class="tile-initials">${initialsFor(p)}</span>
+          ${p.jersey_number ? `<span class="tile-jersey">${p.jersey_number}</span>` : ''}
+        </div>
+        <div class="row-mid">
+          <div class="row-name">
+            ${p.full_name}
+            ${isLocked ? '<span class="injury-flag">Out</span>' : ''}
+          </div>
+          <div class="row-meta">
+            <span class="row-handle">${p.ticker_handle || ''}</span>
+            <span class="row-tp">${p.team_abbreviation}<span class="dot"></span>${p.position}</span>
+          </div>
+        </div>
+        <div class="row-right">
+          <svg class="spark ${dir}" viewBox="0 0 56 22" aria-hidden="true">
+            <path d="${path}"/>
+          </svg>
+          <div class="row-pricecol">
+            <span class="row-price">${fmtPrice(pp.current_price)}</span>
+            <span class="row-pct ${pctDir}">${fmtPct(pp.price_change_pct_24h)}</span>
+          </div>
+          <button class="add-btn" data-state="${addState}" data-pid="${p.id}" data-price="${pp.current_price}" data-name="${lastNameFor(p)}" aria-label="${addLabel} ${p.full_name}">${addLabel}</button>
+        </div>
+      </article>`;
+  }).join('');
+
+  // ----- Sticky lineup builder — driven by data.lineup
+  const sticky = rootEl.querySelector('[data-sticky]');
+  const slotEls = rootEl.querySelector('[data-sticky-slots]');
+  const cta = rootEl.querySelector('[data-sticky-cta]');
+  const countEl = rootEl.querySelector('[data-sticky-count]');
+  const capEl = rootEl.querySelector('[data-sticky-cap]');
+
+  const picked = data.lineup?.lineup_players || [];
+  const capUsed = Number(data.lineup?.total_cap_used || 0);
+  const capLeft = SALARY_CAP - capUsed;
+
+  if (picked.length === 0) {
+    sticky.classList.add('empty');
+  } else {
+    sticky.classList.remove('empty');
+    countEl.textContent = `${picked.length} / ${LINEUP_SIZE}`;
+    capEl.textContent = '$' + capLeft.toFixed(0);
+    // Slots
+    const slots = Array.from({ length: LINEUP_SIZE }, (_, i) => picked[i] || null);
+    slotEls.innerHTML = slots.map(s => {
+      if (!s) return `<div class="slot">Pick</div>`;
+      return `<div class="slot" data-filled="true">
+        <span class="slot-name">${lastNameFor(s.nba_players)}</span>
+        <span class="slot-price">${fmtPrice(s.frozen_price)}</span>
+      </div>`;
+    }).join('');
+    // CTA
+    const remaining = LINEUP_SIZE - picked.length;
+    if (remaining > 0) {
+      cta.dataset.state = 'disabled';
+      cta.textContent = remaining === 1 ? 'Pick 1 more player' : `Pick ${remaining} more players`;
+    } else {
+      cta.dataset.state = 'enabled';
+      cta.textContent = 'Place Order';
+    }
+  }
+
+  // ----- Wire interactions
+  wireSearch(rootEl);
+  wireChips(rootEl);
+  wireAdd(rootEl);
+}
+
+function wireSearch(root) {
+  const input = root.querySelector('[data-search]');
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    root.querySelectorAll('.row').forEach(r => {
+      const txt = r.textContent.toLowerCase();
+      r.style.display = (!q || txt.includes(q)) ? '' : 'none';
+    });
+  });
+}
+
+function wireChips(root) {
+  const chips = root.querySelectorAll('.chip');
+  chips.forEach(c => c.addEventListener('click', () => {
+    chips.forEach(x => x.setAttribute('aria-pressed', 'false'));
+    c.setAttribute('aria-pressed', 'true');
+    const pos = c.dataset.pos;
+    root.querySelectorAll('.row').forEach(r => {
+      if (pos === 'ALL') { r.style.display = ''; return; }
+      const tp = r.querySelector('.row-tp')?.textContent || '';
+      r.style.display = tp.includes(pos) ? '' : 'none';
+    });
+  }));
+}
+
+function wireAdd(root) {
+  // Prototype-only: visual-only state toggle. Real wiring writes to lineup_players.
+  root.querySelectorAll('.add-btn').forEach(btn => {
+    if (btn.dataset.state === 'locked') return;
+    btn.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const isAdded = btn.dataset.state === 'added';
+      btn.dataset.state = isAdded ? 'add' : 'added';
+      btn.textContent = isAdded ? '+ Add' : 'Added';
+    });
+  });
+}
+
+// =============================================================================
+// BOOT
+// =============================================================================
+(async function main() {
+  // Show skeletons immediately into both frames
+  ['screen-iphone', 'screen-desktop'].forEach(id => {
+    const r = document.getElementById(id);
+    r.innerHTML = `
+      <div class="status-bar"><span class="time">9:41</span></div>
+      <div class="top-bar"><div class="skel" style="width:36px;height:36px;border-radius:50%"></div><div class="skel" style="width:90px;height:14px"></div><div class="skel" style="width:90px;height:30px;border-radius:999px"></div></div>
+      <div class="ticker"><div class="skel" style="width:100%;height:100%;border-radius:0"></div></div>
+      <div class="search-wrap"><div class="skel" style="height:44px;border-radius:14px"></div></div>
+      <div class="chips"><div class="skel" style="width:60px;height:32px;border-radius:999px"></div><div class="skel" style="width:48px;height:32px;border-radius:999px"></div><div class="skel" style="width:48px;height:32px;border-radius:999px"></div><div class="skel" style="width:48px;height:32px;border-radius:999px"></div></div>
+      <div class="section-head"><div class="skel" style="width:140px;height:22px"></div></div>
+      <div class="list">${Array.from({length:6}).map(()=>`<div class="skel-row"><div class="skel" style="width:52px;height:52px"></div><div style="flex:1"><div class="skel" style="width:140px;height:14px;margin-bottom:6px"></div><div class="skel" style="width:80px;height:11px"></div></div><div class="skel" style="width:80px;height:18px"></div></div>`).join('')}</div>`;
+  });
+
+  try {
+    const user = await ensureSignedIn();
+    const data = await fetchAll(user.id);
+    renderInto(document.getElementById('screen-iphone'), data);
+    renderInto(document.getElementById('screen-desktop'), data);
+  } catch (err) {
+    console.error(err);
+    const msg = `<div style="padding:24px;color:var(--down);font-family:var(--mono);font-size:12px;line-height:1.6">Sign-in or fetch failed.<br><br>${(err.message || err).toString()}<br><br>Check the demo user exists with credentials demo@betthat.local / BetThatDemo!2026.</div>`;
+    document.getElementById('screen-iphone').innerHTML = msg;
+    document.getElementById('screen-desktop').innerHTML = msg;
+  }
+})();
+</script>
+</body>
+</html>
