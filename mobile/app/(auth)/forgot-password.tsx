@@ -1,10 +1,18 @@
+// =============================================================================
+// BETTHAT — Forgot Password (Holy Grail V2)
+// Sends a password-reset email via Supabase Auth.
+// =============================================================================
+
 import { useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, KeyboardAvoidingView,
-  Platform, ActivityIndicator, Alert,
+  View, Text, TextInput, Pressable,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
+import { HG, FONT } from '@/lib/holygrail';
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -27,58 +35,63 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      className="flex-1 bg-bg"
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View className="flex-1 px-6 pt-16">
-        <TouchableOpacity onPress={() => router.back()} className="mb-8">
-          <Text className="text-brand text-sm">← Back</Text>
-        </TouchableOpacity>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 16 }}>
+          {/* Back */}
+          <Pressable onPress={() => router.back()} hitSlop={12} style={{ marginBottom: 36 }}>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="m15 18-6-6 6-6" />
+            </Svg>
+          </Pressable>
 
-        <Text className="text-text-primary text-3xl font-bold mb-2">Reset Password</Text>
-        <Text className="text-text-muted mb-10 font-sans">
-          Enter your email and we'll send you a reset link.
-        </Text>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 38, color: HG.ink, letterSpacing: -0.8, marginBottom: 8 }}>
+            Reset{'\n'}
+            <Text style={{ fontFamily: FONT.serifItalic, color: HG.sky }}>Password</Text>
+          </Text>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, marginBottom: 36, lineHeight: 20 }}>
+            Enter your email and we'll send you a reset link.
+          </Text>
 
-        {sent ? (
-          <View className="bg-surface border border-win rounded-xl p-5">
-            <Text className="text-win font-medium text-base mb-2">Email sent</Text>
-            <Text className="text-text-secondary font-sans">
-              Check your inbox for the password reset link.
-            </Text>
-          </View>
-        ) : (
-          <>
-            <View>
-              <Text className="text-text-secondary text-xs font-medium mb-2 tracking-wider uppercase font-sans">
+          {sent ? (
+            <View style={{ padding: 20, backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.skyEdge, gap: 8 }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.sky }}>✓ Email sent</Text>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, lineHeight: 20 }}>
+                Check your inbox for the password reset link. Tap it to set a new password.
+              </Text>
+            </View>
+          ) : (
+            <>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
                 Email
               </Text>
               <TextInput
-                className="bg-surface border border-surface-border rounded-xl px-4 py-4 text-text-primary text-base font-sans"
+                style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 16, height: 52, fontFamily: FONT.sans, fontSize: 15, color: HG.ink, marginBottom: 24 }}
                 placeholder="you@example.com"
-                placeholderTextColor="#71717A"
+                placeholderTextColor={HG.muted}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
               />
-            </View>
-
-            <TouchableOpacity
-              onPress={handleReset}
-              disabled={loading}
-              className="mt-6 bg-brand rounded-xl py-4 items-center"
-              style={{ opacity: loading ? 0.7 : 1 }}
-            >
-              {loading
-                ? <ActivityIndicator color="#0A0A0C" />
-                : <Text className="text-bg font-bold text-base">SEND RESET LINK</Text>
-              }
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-    </KeyboardAvoidingView>
+              <Pressable
+                onPress={handleReset}
+                disabled={loading || !email}
+                style={{ height: 54, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: loading || !email ? 0.4 : 1 }}
+              >
+                {loading ? (
+                  <ActivityIndicator color={HG.jet} />
+                ) : (
+                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.8, textTransform: 'uppercase' }}>
+                    Send Reset Link
+                  </Text>
+                )}
+              </Pressable>
+            </>
+          )}
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
+
