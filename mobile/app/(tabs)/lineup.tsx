@@ -138,6 +138,15 @@ export default function PlayerMarketScreen() {
   const picked = lineup?.lineup_players ?? [];
   const isFull = picked.length >= LINEUP_SIZE;
 
+  // Build projection map: playerId → last5_avg_fpts for sticky bar total
+  const projMap = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of (data?.tonight ?? [])) {
+      if (p.last5_avg_fpts != null) m.set(p.id, Number(p.last5_avg_fpts));
+    }
+    return m;
+  }, [data?.tonight]);
+
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
       <ScreenHeader walletBalance={wallet?.balance} />
@@ -322,6 +331,7 @@ export default function PlayerMarketScreen() {
       {picked.length > 0 ? (
         <StickyLineupBar
           lineup={lineup}
+          projMap={projMap}
           onPlaceOrder={() => router.push('/matchup/create' as any)}
           onRemove={(playerId) => removeMutation.mutate(playerId)}
         />
@@ -416,6 +426,7 @@ function PlayerRow({
   const dirColor = priceDirectionColor(pp.price_change_pct_24h);
   const addLabel = isLocked ? 'Out' : isPicked ? 'Added' : '+ Add';
   const addState: 'add' | 'added' | 'locked' = isLocked ? 'locked' : isPicked ? 'added' : 'add';
+  const proj = player.last5_avg_fpts != null ? Number(player.last5_avg_fpts).toFixed(1) : null;
 
   return (
     <Pressable
@@ -454,6 +465,13 @@ function PlayerRow({
           <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted }}>
             {player.team_abbreviation} · {player.position}
           </Text>
+          {proj !== null && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted2 }}>proj</Text>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.ink2 }}>{proj}</Text>
+            </View>
+          )}
+          <DemandChip count={pp.demand_count_1h} />
         </View>
       </View>
 
@@ -509,10 +527,12 @@ function PlayerRow({
 
 function StickyLineupBar({
   lineup,
+  projMap,
   onPlaceOrder,
   onRemove,
 }: {
   lineup: InProgressLineup | null;
+  projMap: Map<string, number>;
   onPlaceOrder: () => void;
   onRemove: (playerId: string) => void;
 }) {
@@ -522,6 +542,9 @@ function StickyLineupBar({
   const remaining = LINEUP_SIZE - picked.length;
   const ready = remaining === 0;
   const slots = Array.from({ length: LINEUP_SIZE }, (_, i) => picked[i] ?? null);
+
+  const totalProj = picked.reduce((sum, p) => sum + (projMap.get(p.nba_players.id) ?? 0), 0);
+  const hasProj = picked.some((p) => projMap.has(p.nba_players.id));
 
   const cta =
     remaining === 1 ? 'Pick 1 more player'
@@ -568,6 +591,13 @@ function StickyLineupBar({
           </View>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+          {hasProj && (
+            <>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>proj FP</Text>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky }}>{totalProj.toFixed(1)}</Text>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.hairline2 }}>·</Text>
+            </>
+          )}
           <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>Cap left</Text>
           <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink }}>${capLeft.toFixed(0)}</Text>
         </View>
@@ -667,6 +697,35 @@ function StickyLineupBar({
           {cta}
         </Text>
       </Pressable>
+    </View>
+  );
+}
+
+// =============================================================================
+// DEMAND CHIP — LOW / MED / HIGH visibility indicator
+// Thresholds (1h demand count): 0-4 = LOW, 5-14 = MED, 15+ = HIGH
+// =============================================================================
+
+function DemandChip({ count }: { count: number | null | undefined }) {
+  if (count == null) return null;
+  const n = Number(count);
+  let label: string;
+  let color: string;
+  let bg: string;
+  if (n >= 15) {
+    label = 'HIGH';
+    color = HG.up;
+    bg = HG.upSoft;
+  } else if (n >= 5) {
+    label = 'MED';
+    color = HG.sky;
+    bg = HG.skySoft;
+  } else {
+    return null; // LOW demand — show nothing to avoid noise
+  }
+  return (
+    <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4, backgroundColor: bg }}>
+      <Text style={{ fontFamily: FONT.monoBold, fontSize: 8, color, letterSpacing: 0.8 }}>{label}</Text>
     </View>
   );
 }

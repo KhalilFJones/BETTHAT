@@ -99,6 +99,25 @@ export default function HomeScreen() {
     refetchInterval: 30_000,
   });
 
+  // Active promo balance query
+  const { data: promoCredit } = useQuery({
+    queryKey: ['home-promo-credit', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return null;
+      const { data } = await supabase
+        .from('user_promo_redemptions' as never)
+        .select('credit_amount, expires_at')
+        .eq('user_id', profile.id)
+        .eq('is_used', false)
+        .gt('expires_at', new Date().toISOString())
+        .order('expires_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      return data as { credit_amount: number; expires_at: string } | null;
+    },
+    enabled: !!profile?.id,
+  });
+
   const tickerEntries = useMemo<TickerEntry[]>(
     () =>
       (data?.ticker ?? [])
@@ -146,6 +165,27 @@ export default function HomeScreen() {
             <Path d="m9 18 6-6-6-6" />
           </Svg>
         </Pressable>
+      )}
+
+      {/* Promo credit banner */}
+      {promoCredit && Number(promoCredit.credit_amount) > 0 && (
+        <View style={{
+          marginHorizontal: 18, marginTop: 8, marginBottom: 2,
+          paddingHorizontal: 16, paddingVertical: 12,
+          backgroundColor: HG.up + '18', borderRadius: 14,
+          borderWidth: 1, borderColor: HG.up + '44',
+          flexDirection: 'row', alignItems: 'center',
+        }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, letterSpacing: 1.2, color: HG.up, marginRight: 6 }}>🎁</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.2, color: HG.up, textTransform: 'uppercase' }}>
+              Promo Credit
+            </Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.ink, marginTop: 2 }}>
+              {fmtPrice(promoCredit.credit_amount)} available · expires {new Date(promoCredit.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </Text>
+          </View>
+        </View>
       )}
 
       <ScrollView

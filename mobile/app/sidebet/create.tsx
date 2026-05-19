@@ -21,6 +21,12 @@ const STATS = [
   { key: 'rebounds',       label: 'REB' },
   { key: 'assists',        label: 'AST' },
   { key: 'three_pointers', label: '3PM' },
+  { key: 'steals',         label: 'STL' },
+  { key: 'blocks',         label: 'BLK' },
+  { key: 'turnovers',      label: 'TO' },
+  { key: 'pts_reb_ast',    label: 'PRA' },
+  { key: 'pts_reb',        label: 'P+R' },
+  { key: 'pts_ast',        label: 'P+A' },
 ] as const;
 type StatKey = (typeof STATS)[number]['key'];
 

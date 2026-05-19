@@ -3,10 +3,11 @@
 // Header monogram, stats strip, friends row, prior matchups, wallet snapshot.
 // =============================================================================
 
-import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { useState } from 'react';
+import { View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl, Modal, TextInput, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Svg, { Path } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
@@ -19,6 +20,25 @@ import { MonogramTile } from '@/components/holygrail/MonogramTile';
 export default function ProfileScreen() {
   const router = useRouter();
   const { profile, wallet, signOut } = useAuthStore();
+  const qc = useQueryClient();
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+
+  const editMutation = useMutation({
+    mutationFn: async (displayName: string) => {
+      if (!profile?.id) throw new Error('Not authenticated');
+      const { error } = await supabase
+        .from('profiles')
+        .update({ display_name: displayName.trim() })
+        .eq('id', profile.id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['profile-detail', profile?.id] });
+      setEditOpen(false);
+    },
+    onError: (err: any) => Alert.alert('Could not save', err?.message ?? 'Try again.'),
+  });
 
   const { data, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['profile-detail', profile?.id],
@@ -63,6 +83,10 @@ export default function ProfileScreen() {
   const losses = profile?.total_losses ?? 0;
   const recordLabel = `${wins}W–${losses}L`;
 
+  // Compute biggest win from matchup history
+  const completedMatchups = (data?.matchups ?? []).filter((m: any) => m.winner_user_id === profile?.id);
+  const biggestWin = completedMatchups.reduce((max: number, m: any) => Math.max(max, Number(m.payout_amount ?? 0)), 0);
+
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
       <ScreenHeader walletBalance={wallet?.balance} />
@@ -89,19 +113,30 @@ export default function ProfileScreen() {
               Member since {profile?.created_at ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' }) : '—'}
             </Text>
           </View>
-          <Pressable onPress={() => router.push('/settings' as any)} hitSlop={10}>
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.muted} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-              <Path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
-              <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-            </Svg>
-          </Pressable>
+          <View style={{ flexDirection: 'row', gap: 14 }}>
+            <Pressable
+              onPress={() => { setEditName(profile?.display_name ?? profile?.username ?? ''); setEditOpen(true); }}
+              hitSlop={10}
+            >
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={HG.muted} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <Path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5Z" />
+              </Svg>
+            </Pressable>
+            <Pressable onPress={() => router.push('/settings' as any)} hitSlop={10}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.muted} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                <Path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
+              </Svg>
+            </Pressable>
+          </View>
         </View>
 
         {/* Stats strip */}
         <View style={{ marginHorizontal: 18, padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, flexDirection: 'row' }}>
-          <StatCol label="Returns" value={fmtPrice(profile?.total_earnings)} accent={Number(profile?.total_earnings ?? 0) > 0} />
+          <StatCol label="Earnings" value={fmtPrice(profile?.total_earnings)} accent={Number(profile?.total_earnings ?? 0) > 0} />
           <StatCol label="Record" value={recordLabel} />
-          <StatCol label="Matchups" value={String(wins + losses)} />
+          <StatCol label="Best win" value={biggestWin > 0 ? fmtPrice(biggestWin) : '—'} accent={biggestWin > 0} />
         </View>
 
         {/* Friends */}
@@ -224,6 +259,45 @@ export default function ProfileScreen() {
           </Text>
         </Pressable>
       </ScrollView>
+
+      {/* Edit display name modal */}
+      <Modal visible={editOpen} transparent animationType="fade" onRequestClose={() => setEditOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', paddingHorizontal: 24 }}>
+          <View style={{ backgroundColor: HG.surface, borderRadius: 20, borderWidth: 1, borderColor: HG.hairline, padding: 24, gap: 18 }}>
+            <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: HG.ink, letterSpacing: -0.4 }}>
+              Edit <Text style={{ fontFamily: FONT.serifItalic, color: HG.sky }}>display name</Text>
+            </Text>
+            <TextInput
+              style={{ backgroundColor: HG.jet, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 14, height: 48, fontFamily: FONT.sans, fontSize: 15, color: HG.ink }}
+              value={editName}
+              onChangeText={setEditName}
+              placeholder="Your display name"
+              placeholderTextColor={HG.muted}
+              autoFocus
+              maxLength={32}
+            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <Pressable
+                onPress={() => setEditOpen(false)}
+                style={{ flex: 1, height: 46, borderRadius: 999, borderWidth: 1, borderColor: HG.hairline, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.2 }}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => { if (editName.trim()) editMutation.mutate(editName); }}
+                disabled={editMutation.isPending || !editName.trim()}
+                style={{ flex: 1, height: 46, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: editName.trim() ? 1 : 0.4 }}
+              >
+                {editMutation.isPending ? (
+                  <ActivityIndicator color={HG.jet} size="small" />
+                ) : (
+                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.jet, letterSpacing: 1.2 }}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }

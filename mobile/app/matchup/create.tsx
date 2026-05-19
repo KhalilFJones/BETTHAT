@@ -245,9 +245,9 @@ export default function PlaceOrderScreen() {
               {validation.msg || validation.helper}
             </Text>
 
-            {/* Quick tap presets */}
+            {/* Quick tap presets — official entry tiers */}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
-              {[5, 10, 25, 50].map((v) => {
+              {[1, 5, 10, 20, 50].map((v) => {
                 const active = wagerNum === v;
                 return (
                   <Pressable
