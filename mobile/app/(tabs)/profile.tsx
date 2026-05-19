@@ -19,7 +19,7 @@ import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 export default function ProfileScreen() {
   const router = useRouter();
-  const { profile, wallet, signOut } = useAuthStore();
+  const { profile, wallet, signOut, setProfile } = useAuthStore();
   const qc = useQueryClient();
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
@@ -34,6 +34,9 @@ export default function ProfileScreen() {
       if (error) throw error;
     },
     onSuccess: () => {
+      // Update Zustand store immediately so the header reflects the new name
+      // without waiting for a realtime event.
+      if (profile) setProfile({ ...profile, display_name: editName.trim() });
       qc.invalidateQueries({ queryKey: ['profile-detail', profile?.id] });
       setEditOpen(false);
     },

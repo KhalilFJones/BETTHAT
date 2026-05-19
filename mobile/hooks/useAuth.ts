@@ -73,11 +73,22 @@ export function useAuth() {
   // payouts, deposits via Stripe webhook, etc.) reflect on the client without
   // a manual refetch.
   function subscribeToUser(userId: string) {
-    // Guard: don't re-subscribe if already listening for this user.
-    // Both getSession() and onAuthStateChange fire on mount — skip the duplicate.
+    // Guard: set ref FIRST to block any concurrent/re-entrant calls for same user.
+    // Both getSession() and onAuthStateChange fire on mount — the second call
+    // sees the ref already set and exits before touching any channels.
     if (subscribedUserRef.current === userId) return;
-    tearDownSubs();
     subscribedUserRef.current = userId;
+
+    // Remove any stale channels without touching subscribedUserRef.
+    if (channelsRef.current.wallet) {
+      supabase.removeChannel(channelsRef.current.wallet);
+      channelsRef.current.wallet = undefined;
+    }
+    if (channelsRef.current.profile) {
+      supabase.removeChannel(channelsRef.current.profile);
+      channelsRef.current.profile = undefined;
+    }
+
     channelsRef.current.wallet = supabase
       .channel(`wallet:${userId}`)
       .on(
