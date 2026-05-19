@@ -12,6 +12,8 @@ export function useAuth() {
 
   // Track active realtime subscriptions so we can tear down on signout / unmount.
   const channelsRef = useRef<{ wallet?: any; profile?: any }>({});
+  // Guard against double-subscribe: getSession + onAuthStateChange both fire on mount.
+  const subscribedUserRef = useRef<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -71,7 +73,11 @@ export function useAuth() {
   // payouts, deposits via Stripe webhook, etc.) reflect on the client without
   // a manual refetch.
   function subscribeToUser(userId: string) {
+    // Guard: don't re-subscribe if already listening for this user.
+    // Both getSession() and onAuthStateChange fire on mount — skip the duplicate.
+    if (subscribedUserRef.current === userId) return;
     tearDownSubs();
+    subscribedUserRef.current = userId;
     channelsRef.current.wallet = supabase
       .channel(`wallet:${userId}`)
       .on(
@@ -91,6 +97,7 @@ export function useAuth() {
   }
 
   function tearDownSubs() {
+    subscribedUserRef.current = null;
     if (channelsRef.current.wallet) {
       supabase.removeChannel(channelsRef.current.wallet);
       channelsRef.current.wallet = undefined;
