@@ -1,10 +1,15 @@
-import { View, Text, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
+// =============================================================================
+// BETTHAT — Notifications (Holy Grail V2, Screen 12)
+// =============================================================================
+
+import { View, Text, FlatList, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { COLORS } from '@/lib/utils';
+import { HG, FONT, fmtRelative } from '@/lib/holygrail';
 import type { UserNotification } from '@/lib/database.types';
 
 export default function NotificationsScreen() {
@@ -41,10 +46,7 @@ export default function NotificationsScreen() {
 
   const markRead = useMutation({
     mutationFn: async (id: string) => {
-      await supabase
-        .from('notifications')
-        .update({ is_read: true })
-        .eq('id', id);
+      await supabase.from('notifications').update({ is_read: true }).eq('id', id);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['notifications'] }),
   });
@@ -52,68 +54,80 @@ export default function NotificationsScreen() {
   const unreadCount = notifications?.filter((n) => !n.is_read).length ?? 0;
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
-      <View className="flex-row items-center justify-between px-5 pt-4 pb-3">
-        <View className="flex-row items-center">
-          <TouchableOpacity onPress={() => router.back()} className="mr-4">
-            <Text className="text-brand text-sm">← Back</Text>
-          </TouchableOpacity>
-          <Text className="text-text-primary font-bold text-xl">
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, height: 54 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <Pressable onPress={() => router.back()} hitSlop={12}>
+            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="m15 18-6-6 6-6" />
+            </Svg>
+          </Pressable>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 28, color: HG.ink, letterSpacing: -0.4 }}>
             Notifications
-            {unreadCount > 0 && (
-              <Text className="text-brand font-mono"> ({unreadCount})</Text>
-            )}
+            {unreadCount > 0 ? (
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 16, color: HG.sky }}> {unreadCount}</Text>
+            ) : null}
           </Text>
         </View>
         {unreadCount > 0 && (
-          <TouchableOpacity onPress={() => markAllRead.mutate()}>
-            <Text className="text-brand text-sm">Mark all read</Text>
-          </TouchableOpacity>
+          <Pressable onPress={() => markAllRead.mutate()} hitSlop={10}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.sky, letterSpacing: 0.6 }}>
+              Mark all read
+            </Text>
+          </Pressable>
         )}
       </View>
 
       {isLoading ? (
-        <ActivityIndicator color={COLORS.brand} className="mt-20" />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={HG.sky} />
+        </View>
       ) : (notifications?.length ?? 0) === 0 ? (
-        <View className="flex-1 items-center justify-center">
-          <Text className="text-text-primary font-bold text-base">All caught up</Text>
-          <Text className="text-text-muted text-sm mt-1 font-sans">No notifications yet.</Text>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink }}>
+            All <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>caught up</Text>
+          </Text>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted }}>No notifications yet.</Text>
         </View>
       ) : (
         <FlatList
           data={notifications}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 40 }}
+          contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 40 }}
           renderItem={({ item }) => (
-            <TouchableOpacity
-              onPress={() => {
-                if (!item.is_read) markRead.mutate(item.id);
-              }}
-              className="flex-row items-start py-4 border-b border-surface-border"
-              style={{ opacity: item.is_read ? 0.6 : 1 }}
+            <Pressable
+              onPress={() => { if (!item.is_read) markRead.mutate(item.id); }}
+              style={({ pressed }) => ({
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                paddingVertical: 16,
+                borderBottomWidth: 1,
+                borderColor: HG.hairline,
+                opacity: pressed ? 0.7 : item.is_read ? 0.55 : 1,
+                gap: 12,
+              })}
             >
-              <View className="flex-1">
-                <View className="flex-row items-center gap-2">
-                  <Text className="text-text-primary font-bold text-sm flex-1">{item.title}</Text>
-                  {!item.is_read && (
-                    <View className="w-2 h-2 rounded-full bg-brand" />
-                  )}
-                </View>
-                {item.body && (
-                  <Text className="text-text-muted text-xs mt-0.5 font-sans" numberOfLines={2}>
+              {/* Unread dot */}
+              <View style={{ width: 7, height: 7, borderRadius: 999, backgroundColor: item.is_read ? 'transparent' : HG.sky, marginTop: 6, flexShrink: 0 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink, lineHeight: 20 }}>
+                  {item.title}
+                </Text>
+                {item.body ? (
+                  <Text numberOfLines={2} style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, marginTop: 3, lineHeight: 18 }}>
                     {item.body}
                   </Text>
-                )}
-                <Text className="text-text-muted text-xs mt-1 font-mono">
-                  {new Date(item.created_at).toLocaleDateString('en-US', {
-                    month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-                  })}
+                ) : null}
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted2, marginTop: 5, letterSpacing: 0.4 }}>
+                  {fmtRelative(item.created_at)}
                 </Text>
               </View>
-            </TouchableOpacity>
+            </Pressable>
           )}
         />
       )}
     </SafeAreaView>
   );
 }
+

@@ -1,13 +1,29 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+// =============================================================================
+// BETTHAT — Public User Profile (Holy Grail V2, Screen 10b)
+// Shows any user's record, rank, earnings, recent achievements.
+// Challenge CTA → matchup create. Send friend request inline.
+// =============================================================================
+
+import { View, Text, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
-import { formatCurrency, RANK_COLORS, COLORS } from '@/lib/utils';
+import { useAuthStore } from '@/stores/auth.store';
+import { HG, FONT, fmtPrice } from '@/lib/holygrail';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
+
+const RANK_TINT: Record<string, string> = {
+  Bronze: '#CD7F32', Silver: '#9E9E9E', Gold: '#F5A524',
+  Platinum: '#5B9BD5', Diamond: '#A855F7',
+};
 
 export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const qc = useQueryClient();
+  const { profile } = useAuthStore();
 
   const { data: user, isLoading } = useQuery({
     queryKey: ['user_profile', id],
@@ -27,7 +43,6 @@ export default function UserProfileScreen() {
   const { data: achievements } = useQuery({
     queryKey: ['user_achievements_public', id],
     queryFn: async () => {
-      // Schema columns: name, rarity (not icon/title).
       const { data } = await supabase
         .from('user_achievements')
         .select('*, achievement:achievements(name, rarity)')
@@ -39,67 +54,137 @@ export default function UserProfileScreen() {
     enabled: !!id,
   });
 
+  // Check if already friends
+  const { data: friendStatus } = useQuery({
+    queryKey: ['friend-status', profile?.id, id],
+    queryFn: async () => {
+      if (!profile?.id || !id) return null;
+      const { data } = await supabase
+        .from('friends')
+        .select('id, status')
+        .or(
+          `and(requester_id.eq.${profile.id},recipient_id.eq.${id}),` +
+          `and(requester_id.eq.${id},recipient_id.eq.${profile.id})`
+        )
+        .maybeSingle();
+      return data as { id: string; status: string } | null;
+    },
+    enabled: !!profile?.id && !!id,
+  });
+
+  const sendRequest = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.from('friends').insert({
+        requester_id: profile!.id,
+        recipient_id: id!,
+        status: 'pending',
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['friend-status'] }),
+    onError: (err: Error) => Alert.alert('Could not send request', err.message),
+  });
+
   if (isLoading || !user) {
     return (
-      <SafeAreaView className="flex-1 bg-bg items-center justify-center">
-        <ActivityIndicator color={COLORS.brand} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: HG.jet, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={HG.sky} />
       </SafeAreaView>
     );
   }
 
-  const rankColor = RANK_COLORS[user.rank_tier ?? 'Bronze'];
+  const rankTint = RANK_TINT[user.rank_tier ?? 'Bronze'] ?? HG.muted;
   const totalGames = (user.total_wins ?? 0) + (user.total_losses ?? 0);
-  const winRate = totalGames > 0
-    ? Math.round(((user.total_wins ?? 0) / totalGames) * 100)
-    : 0;
+  const winRate = totalGames > 0 ? Math.round(((user.total_wins ?? 0) / totalGames) * 100) : 0;
+  const isOwnProfile = user.id === profile?.id;
+  const isFriend = friendStatus?.status === 'accepted';
+  const isPending = friendStatus?.status === 'pending';
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
-      <View className="flex-row items-center px-5 pt-4 pb-2">
-        <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-brand text-sm">← Back</Text>
-        </TouchableOpacity>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m15 18-6-6 6-6" />
+          </Svg>
+        </Pressable>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 60 }}>
-        <View className="items-center px-5 pt-4 pb-6">
-          <View
-            className="w-20 h-20 rounded-full bg-surface border-2 items-center justify-center mb-3"
-            style={{ borderColor: rankColor }}
-          >
-            <Text className="text-text-primary text-4xl">{user.display_name?.[0]?.toUpperCase() ?? '?'}</Text>
-          </View>
-          <Text className="text-text-primary text-2xl font-bold">{user.display_name ?? user.username}</Text>
-          <Text className="text-text-muted text-sm font-sans">@{user.username}</Text>
-          <View className="mt-2 px-3 py-1 rounded-full border" style={{ borderColor: rankColor }}>
-            <Text className="text-xs font-bold" style={{ color: rankColor }}>{user.rank_tier}</Text>
-          </View>
-        </View>
-
-        <View className="mx-5 bg-surface border border-surface-border rounded-2xl p-5 mb-6">
-          <View className="flex-row justify-between mb-4">
-            <StatCell label="Wins" value={String(user.total_wins)} color={COLORS.win} />
-            <StatCell label="Losses" value={String(user.total_losses)} color={COLORS.loss} />
-            <StatCell label="Win Rate" value={`${winRate}%`} color={COLORS.brand} />
-          </View>
-          <View className="flex-row justify-center">
-            <StatCell label="Total Earnings" value={formatCurrency(Number(user.total_earnings))} color="#A855F7" />
+      <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
+        {/* Hero */}
+        <View style={{ paddingHorizontal: 18, paddingTop: 16, paddingBottom: 24, alignItems: 'center', gap: 10 }}>
+          <MonogramTile
+            initials={(user.display_name ?? user.username ?? '??').slice(0, 2).toUpperCase()}
+            size={88}
+            showJersey={false}
+          />
+          <Text style={{ fontFamily: FONT.serif, fontSize: 32, color: HG.ink, letterSpacing: -0.5, textAlign: 'center' }}>
+            {user.display_name ?? user.username}
+          </Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.muted, letterSpacing: 0.6 }}>
+            @{user.username}
+          </Text>
+          <View style={{ paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999, borderWidth: 1, borderColor: rankTint + '66' }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: rankTint, letterSpacing: 0.8 }}>
+              {user.rank_tier ?? 'Bronze'}
+            </Text>
           </View>
         </View>
 
+        {/* Stats strip */}
+        <View style={{ marginHorizontal: 18, padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, flexDirection: 'row', marginBottom: 16 }}>
+          <StatCol label="Wins" value={String(user.total_wins ?? 0)} accent />
+          <StatCol label="Losses" value={String(user.total_losses ?? 0)} />
+          <StatCol label="Win %" value={`${winRate}%`} />
+          <StatCol label="Earnings" value={fmtPrice(user.total_earnings)} accent />
+        </View>
+
+        {/* CTAs (not own profile) */}
+        {!isOwnProfile && (
+          <View style={{ marginHorizontal: 18, flexDirection: 'row', gap: 10, marginBottom: 24 }}>
+            <Pressable
+              onPress={() => router.push('/matchup/create' as any)}
+              style={{ flex: 1, height: 44, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.jet, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                Challenge
+              </Text>
+            </Pressable>
+            {!isFriend && (
+              <Pressable
+                onPress={() => !isPending && sendRequest.mutate()}
+                disabled={isPending || sendRequest.isPending}
+                style={{ flex: 1, height: 44, borderRadius: 999, backgroundColor: 'transparent', borderWidth: 1, borderColor: isFriend || isPending ? HG.hairline : HG.skyEdge, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: isPending ? HG.muted : HG.sky, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                  {isPending ? 'Requested' : 'Add Friend'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* Achievements */}
         {(achievements?.length ?? 0) > 0 && (
-          <View className="px-5">
-            <Text className="text-text-primary font-bold text-lg mb-3">Recent Achievements</Text>
-            <View className="flex-row flex-wrap gap-3">
-              {achievements?.map((ua: any) => {
+          <View style={{ paddingHorizontal: 18 }}>
+            <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: HG.ink, marginBottom: 12 }}>
+              <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>Recent</Text> achievements
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {(achievements ?? []).map((ua: any) => {
                 const ach = Array.isArray(ua.achievement) ? ua.achievement[0] : ua.achievement;
+                const rarityTint = ach?.rarity === 'legendary' ? '#F5A524' : ach?.rarity === 'epic' ? '#A855F7' : ach?.rarity === 'rare' ? HG.sky : HG.muted;
                 return (
                   <View
                     key={ua.id}
-                    className="w-[30%] bg-surface border border-surface-border rounded-xl p-3 items-center"
+                    style={{ width: '30.5%', padding: 12, backgroundColor: HG.surface, borderRadius: 12, borderWidth: 1, borderColor: rarityTint + '44', alignItems: 'center', gap: 4 }}
                   >
-                    <Text className="text-text-primary text-[11px] font-bold text-center" numberOfLines={2}>
-                      {ach?.name ?? 'Achievement'}
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: rarityTint, letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                      {ach?.rarity ?? 'common'}
+                    </Text>
+                    <Text numberOfLines={2} style={{ fontFamily: FONT.sansMedium, fontSize: 11, color: HG.ink, textAlign: 'center' }}>
+                      {ach?.name ?? '—'}
                     </Text>
                   </View>
                 );
@@ -112,11 +197,12 @@ export default function UserProfileScreen() {
   );
 }
 
-function StatCell({ label, value, color }: { label: string; value: string; color: string }) {
+function StatCol({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <View className="items-center">
-      <Text className="font-mono text-xl font-bold" style={{ color }}>{value}</Text>
-      <Text className="text-text-muted text-xs mt-0.5 font-sans">{label}</Text>
+    <View style={{ flex: 1, alignItems: 'center', gap: 4 }}>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 15, color: accent ? HG.sky : HG.ink, letterSpacing: -0.2 }}>{value}</Text>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
     </View>
   );
 }
+

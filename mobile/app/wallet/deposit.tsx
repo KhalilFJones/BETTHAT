@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useMutation } from '@tanstack/react-query';
+import Svg, { Path } from 'react-native-svg';
 import { useAuthStore } from '@/stores/auth.store';
 import { createPaymentIntent, EmailUnverifiedError } from '@/services/wallet';
 import { supabase } from '@/lib/supabase';
-import { formatCurrency } from '@/lib/utils';
+import { HG, FONT, fmtPrice } from '@/lib/holygrail';
 
 // Stripe payment sheet is loaded lazily so that tests / web platforms which
 // don't link the native module don't crash on import.
@@ -76,67 +77,79 @@ export default function DepositScreen() {
   });
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
-      <View className="flex-row items-center px-5 pt-4 pb-2">
-        <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-brand text-sm">← Back</Text>
-        </TouchableOpacity>
-        <Text className="text-text-primary font-bold text-xl">Deposit</Text>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m15 18-6-6 6-6" />
+          </Svg>
+        </Pressable>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginLeft: 12 }}>Deposit</Text>
       </View>
 
-      <View className="flex-1 px-5 pt-6">
-        <Text className="text-text-muted text-xs uppercase tracking-wider mb-3 font-sans">
-          Current Balance
-        </Text>
-        <Text className="text-text-primary font-mono text-3xl font-bold mb-8">
-          {formatCurrency(Number(wallet?.balance ?? 0))}
-        </Text>
+      <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: 16 }}>
+        {/* Balance display */}
+        <View style={{ padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.hairline, marginBottom: 28 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 6 }}>
+            Current Balance
+          </Text>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 32, color: HG.ink, letterSpacing: -0.5 }}>
+            {fmtPrice(wallet?.balance ?? 0)}
+          </Text>
+        </View>
 
-        <Text className="text-text-primary font-bold mb-3">Select Amount</Text>
-        <View className="flex-row flex-wrap gap-2 mb-5">
+        {/* Preset amounts */}
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 10 }}>
+          Select Amount
+        </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
           {AMOUNTS.map((a) => (
-            <TouchableOpacity
+            <Pressable
               key={a}
               onPress={() => { setSelectedPreset(a); setAmount(''); }}
-              className="px-5 py-3 rounded-xl border"
               style={{
-                borderColor: selectedPreset === a ? '#F5A524' : '#2A2A2E',
-                backgroundColor: selectedPreset === a ? '#1a1200' : '#141416',
+                paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, borderWidth: 1,
+                borderColor: selectedPreset === a ? HG.sky : HG.hairline,
+                backgroundColor: selectedPreset === a ? HG.sky + '22' : HG.surface,
               }}
             >
-              <Text className="font-mono font-bold" style={{ color: selectedPreset === a ? '#F5A524' : '#71717A' }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 14, color: selectedPreset === a ? HG.sky : HG.muted }}>
                 ${a}
               </Text>
-            </TouchableOpacity>
+            </Pressable>
           ))}
         </View>
 
-        <Text className="text-text-muted text-sm mb-2 font-sans">Or enter custom amount</Text>
+        {/* Custom amount */}
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
+          Or enter custom amount
+        </Text>
         <TextInput
-          className="bg-surface border border-surface-border rounded-xl px-4 py-3 text-text-primary font-mono text-2xl text-center mb-8"
+          style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontFamily: FONT.monoBold, fontSize: 28, color: HG.ink, textAlign: 'center', marginBottom: 28 }}
           placeholder="$0.00"
-          placeholderTextColor="#71717A"
+          placeholderTextColor={HG.muted}
           keyboardType="decimal-pad"
           value={amount}
           onChangeText={(v) => { setAmount(v); setSelectedPreset(null); }}
         />
 
-        <TouchableOpacity
+        {/* CTA */}
+        <Pressable
           onPress={() => deposit.mutate()}
           disabled={deposit.isPending || (!selectedPreset && (!amount || Number.isNaN(parseFloat(amount))))}
-          className="bg-brand rounded-xl py-4 items-center"
-          style={{ opacity: !finalAmount || Number.isNaN(finalAmount) ? 0.4 : 1 }}
+          style={{ height: 54, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: !finalAmount || Number.isNaN(finalAmount) ? 0.4 : 1 }}
         >
           {deposit.isPending ? (
-            <ActivityIndicator color="#0A0A0C" />
+            <ActivityIndicator color={HG.jet} />
           ) : (
-            <Text className="text-bg font-bold text-base">
-              DEPOSIT {finalAmount && !Number.isNaN(finalAmount) ? formatCurrency(finalAmount) : ''}
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.8, textTransform: 'uppercase' }}>
+              Deposit {finalAmount && !Number.isNaN(finalAmount) ? fmtPrice(finalAmount) : ''}
             </Text>
           )}
-        </TouchableOpacity>
+        </Pressable>
 
-        <Text className="text-text-muted text-xs text-center mt-4 font-sans">
+        <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: HG.muted, textAlign: 'center', marginTop: 14 }}>
           Deposits are processed securely via Stripe.
         </Text>
       </View>

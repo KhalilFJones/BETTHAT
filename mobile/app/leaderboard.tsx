@@ -1,11 +1,18 @@
+// =============================================================================
+// BETTHAT — Leaderboard (Holy Grail V2)
+// Weekly / Monthly / All-Time tabs. Top 3 medals. My-rank sticky strip.
+// =============================================================================
+
 import { useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { formatCurrency, RANK_COLORS, COLORS } from '@/lib/utils';
+import { HG, FONT, fmtPrice } from '@/lib/holygrail';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
 import type { LeaderboardEntry } from '@/lib/database.types';
 
 type Period = 'weekly' | 'monthly' | 'all_time';
@@ -53,92 +60,83 @@ export default function LeaderboardScreen() {
   const myEntry = entries?.find((e) => e.user?.id === profile?.id);
 
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
-      <View className="flex-row items-center px-5 pt-4 pb-2">
-        <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-brand text-sm">← Back</Text>
-        </TouchableOpacity>
-        <Text className="text-text-primary font-bold text-xl">Leaderboard</Text>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m15 18-6-6 6-6" />
+          </Svg>
+        </Pressable>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginLeft: 12 }}>
+          Leaderboard
+        </Text>
       </View>
 
-      <View className="flex-row mx-5 bg-surface rounded-xl p-1 mt-3 mb-4">
+      {/* Period tabs */}
+      <View style={{ flexDirection: 'row', marginHorizontal: 18, backgroundColor: HG.surface, borderRadius: 12, padding: 4, marginTop: 8, marginBottom: 14, borderWidth: 1, borderColor: HG.hairline }}>
         {(['weekly', 'monthly', 'all_time'] as Period[]).map((p) => (
-          <TouchableOpacity
+          <Pressable
             key={p}
-            className="flex-1 py-2 rounded-lg items-center"
-            style={{ backgroundColor: period === p ? '#F5A524' : 'transparent' }}
             onPress={() => setPeriod(p)}
+            style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center', backgroundColor: period === p ? HG.sky : 'transparent' }}
           >
-            <Text
-              className="text-xs font-bold"
-              style={{ color: period === p ? '#0A0A0C' : '#71717A' }}
-            >
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, letterSpacing: 0.8, color: period === p ? HG.jet : HG.muted, textTransform: 'uppercase' }}>
               {PERIOD_LABELS[p]}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ))}
       </View>
 
+      {/* My rank strip */}
       {myEntry && (
-        <View className="mx-5 mb-4 bg-brandTint border border-brand rounded-xl px-4 py-3 flex-row items-center">
-          <Text className="text-brand font-mono font-bold text-2xl mr-3">#{myEntry.rank}</Text>
-          <View className="flex-1">
-            <Text className="text-text-primary font-bold">Your Rank</Text>
-            <Text className="text-text-muted text-xs font-mono">
-              {myEntry.wins}W · {formatCurrency(Number(myEntry.score))} earned
+        <View style={{ marginHorizontal: 18, marginBottom: 14, backgroundColor: HG.skyEdge + '22', borderWidth: 1, borderColor: HG.sky + '44', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 22, color: HG.sky, marginRight: 12 }}>#{myEntry.rank}</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>Your Rank</Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, marginTop: 2 }}>
+              {myEntry.wins}W · {fmtPrice(myEntry.score)} earned
             </Text>
           </View>
-          <Text className="text-brand font-mono font-bold">{formatCurrency(Number(myEntry.score))}</Text>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: HG.sky }}>{fmtPrice(myEntry.score)}</Text>
         </View>
       )}
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 80 }}>
         {isLoading ? (
-          <ActivityIndicator color={COLORS.brand} className="mt-16" />
+          <View style={{ paddingTop: 60, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
         ) : (
           entries?.map((entry) => {
             const user = entry.user;
             const isMe = user?.id === profile?.id;
             const pos = entry.rank;
-            const rankColor = RANK_COLORS[user?.rank_tier ?? 'Bronze'];
-
+            const initials = (user?.display_name ?? user?.username ?? '??').slice(0, 2).toUpperCase();
             return (
               <View
                 key={entry.id}
-                className="flex-row items-center rounded-xl px-4 py-3 mb-2 border"
                 style={{
-                  backgroundColor: isMe ? '#1a1200' : COLORS.surface,
-                  borderColor: isMe ? '#F5A52455' : COLORS.border,
+                  flexDirection: 'row', alignItems: 'center', borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 8, borderWidth: 1,
+                  backgroundColor: isMe ? HG.sky + '18' : HG.surface,
+                  borderColor: isMe ? HG.sky + '55' : HG.hairline,
                 }}
               >
-                <View className="w-8 items-center mr-3">
+                <View style={{ width: 32, alignItems: 'center', marginRight: 10 }}>
                   {pos <= 3 ? (
-                    <Text className="text-xl">{MEDAL[pos - 1]}</Text>
+                    <Text style={{ fontSize: 18 }}>{MEDAL[pos - 1]}</Text>
                   ) : (
-                    <Text className="text-text-muted font-mono font-bold">#{pos}</Text>
+                    <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.muted }}>#{pos}</Text>
                   )}
                 </View>
-
-                <View
-                  className="w-9 h-9 rounded-full bg-surface-raised border items-center justify-center mr-3"
-                  style={{ borderColor: rankColor }}
-                >
-                  <Text className="text-sm font-bold" style={{ color: rankColor }}>
-                    {user?.display_name?.[0]?.toUpperCase() ?? '?'}
+                <MonogramTile initials={initials} size={36} showJersey={false} />
+                <View style={{ flex: 1, marginLeft: 10 }}>
+                  <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>
+                    {user?.display_name ?? user?.username}{isMe ? ' (You)' : ''}
+                  </Text>
+                  <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, marginTop: 2 }}>
+                    {entry.wins}W {entry.losses}L
                   </Text>
                 </View>
-
-                <View className="flex-1">
-                  <Text className="text-text-primary font-bold text-sm">
-                    {user?.display_name ?? user?.username}
-                    {isMe ? ' (You)' : ''}
-                  </Text>
-                  <Text className="text-text-muted text-xs font-mono">{entry.wins}W {entry.losses}L</Text>
-                </View>
-
-                <Text className="text-brand font-mono font-bold text-base">
-                  {formatCurrency(Number(entry.score))}
-                </Text>
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 14, color: HG.sky }}>{fmtPrice(entry.score)}</Text>
               </View>
             );
           })

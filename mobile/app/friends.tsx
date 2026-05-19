@@ -1,14 +1,21 @@
+// =============================================================================
+// BETTHAT — Friends (Holy Grail V2)
+// 3 tabs: Friends list / Pending requests / Search for players
+// =============================================================================
+
 import { useState } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity, TextInput,
+  View, Text, ScrollView, Pressable, TextInput,
   ActivityIndicator, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
+import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { RANK_COLORS } from '@/lib/utils';
+import { HG, FONT } from '@/lib/holygrail';
+import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 type Tab = 'friends' | 'requests' | 'search';
 
@@ -90,60 +97,61 @@ export default function FriendsScreen() {
     onError: () => Alert.alert('Error', 'Could not respond to request.'),
   });
 
+  const reqCount = requests?.length ?? 0;
+
   return (
-    <SafeAreaView className="flex-1 bg-bg" edges={['top']}>
-      <View className="flex-row items-center px-5 pt-4 pb-2">
-        <TouchableOpacity onPress={() => router.back()} className="mr-4">
-          <Text className="text-brand text-sm">← Back</Text>
-        </TouchableOpacity>
-        <Text className="text-text-primary font-bold text-xl">Friends</Text>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+      {/* Header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
+        <Pressable onPress={() => router.back()} hitSlop={12}>
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m15 18-6-6 6-6" />
+          </Svg>
+        </Pressable>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginLeft: 12 }}>Friends</Text>
       </View>
 
-      <View className="flex-row mx-5 bg-surface rounded-xl p-1 mt-3 mb-4">
+      {/* Tabs */}
+      <View style={{ flexDirection: 'row', marginHorizontal: 18, backgroundColor: HG.surface, borderRadius: 12, padding: 4, marginTop: 8, marginBottom: 14, borderWidth: 1, borderColor: HG.hairline }}>
         {(['friends', 'requests', 'search'] as Tab[]).map((t) => (
-          <TouchableOpacity
+          <Pressable
             key={t}
-            className="flex-1 py-2 rounded-lg items-center"
-            style={{ backgroundColor: tab === t ? '#F5A524' : 'transparent' }}
             onPress={() => setTab(t)}
+            style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center', backgroundColor: tab === t ? HG.sky : 'transparent' }}
           >
-            <Text
-              className="text-sm font-bold capitalize"
-              style={{ color: tab === t ? '#0A0A0C' : '#71717A' }}
-            >
-              {t}{t === 'requests' && (requests?.length ?? 0) > 0 ? ` (${requests?.length})` : ''}
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, letterSpacing: 0.8, color: tab === t ? HG.jet : HG.muted, textTransform: 'capitalize' }}>
+              {t}{t === 'requests' && reqCount > 0 ? ` (${reqCount})` : ''}
             </Text>
-          </TouchableOpacity>
+          </Pressable>
         ))}
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 60 }}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 80 }}>
 
         {tab === 'search' && (
           <>
             <TextInput
-              className="bg-surface border border-surface-border rounded-xl px-4 py-3 text-text-primary mb-4 font-sans"
-              placeholder="Search by username..."
-              placeholderTextColor="#71717A"
+              style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontFamily: FONT.sans, fontSize: 14, color: HG.ink, marginBottom: 14 }}
+              placeholder="Search by username…"
+              placeholderTextColor={HG.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
               autoCorrect={false}
             />
-            {searchLoading && <ActivityIndicator color="#F5A524" />}
-            {searchResults?.map((user: any) => (
+            {searchLoading && <ActivityIndicator color={HG.sky} style={{ marginVertical: 16 }} />}
+            {searchResults?.map((u: any) => (
               <UserRow
-                key={user.id}
-                user={user}
-                rankColor={RANK_COLORS[user.rank_tier]}
+                key={u.id}
+                user={u}
                 action={
-                  <TouchableOpacity
-                    onPress={() => sendRequest.mutate(user.id)}
+                  <Pressable
+                    onPress={() => sendRequest.mutate(u.id)}
                     disabled={sendRequest.isPending}
-                    className="bg-brand px-3 py-1.5 rounded-lg"
+                    style={{ backgroundColor: HG.sky, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
                   >
-                    <Text className="text-bg text-xs font-bold">Add</Text>
-                  </TouchableOpacity>
+                    <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.jet, letterSpacing: 0.8 }}>Add</Text>
+                  </Pressable>
                 }
               />
             ))}
@@ -153,11 +161,11 @@ export default function FriendsScreen() {
         {tab === 'friends' && (
           <>
             {friendsLoading ? (
-              <ActivityIndicator color="#F5A524" className="mt-10" />
+              <ActivityIndicator color={HG.sky} style={{ marginTop: 40 }} />
             ) : (friends?.length ?? 0) === 0 ? (
-              <View className="items-center py-16">
-                <Text className="text-text-primary font-bold text-base mb-1">No Friends Yet</Text>
-                <Text className="text-text-muted text-sm text-center font-sans">
+              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: HG.ink, marginBottom: 6 }}>No Friends Yet</Text>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, textAlign: 'center' }}>
                   Use the Search tab to find players to challenge.
                 </Text>
               </View>
@@ -168,14 +176,13 @@ export default function FriendsScreen() {
                   <UserRow
                     key={f.id}
                     user={friend}
-                    rankColor={RANK_COLORS[friend.rank_tier]}
                     action={
-                      <TouchableOpacity
-                        onPress={() => router.push(`/user/${friend.id}`)}
-                        className="border border-surface-border px-3 py-1.5 rounded-lg"
+                      <Pressable
+                        onPress={() => router.push(`/user/${friend.id}` as any)}
+                        style={{ borderWidth: 1, borderColor: HG.hairline, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
                       >
-                        <Text className="text-text-primary text-xs">View</Text>
-                      </TouchableOpacity>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.ink2 }}>View</Text>
+                      </Pressable>
                     }
                   />
                 );
@@ -186,37 +193,36 @@ export default function FriendsScreen() {
 
         {tab === 'requests' && (
           <>
-            {(requests?.length ?? 0) === 0 ? (
-              <View className="items-center py-16">
-                <Text className="text-text-muted font-sans">No pending requests.</Text>
+            {reqCount === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted }}>No pending requests.</Text>
               </View>
             ) : (
               requests?.map((req: any) => {
                 const requester = req.requester;
                 return (
-                  <View
-                    key={req.id}
-                    className="flex-row items-center bg-surface border border-surface-border rounded-xl px-4 py-3 mb-3"
-                  >
-                    <View className="w-10 h-10 rounded-full bg-surface-raised items-center justify-center mr-3">
-                      <Text className="text-text-primary text-base">{requester.display_name?.[0] ?? '?'}</Text>
+                  <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: HG.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: HG.hairline }}>
+                    <MonogramTile
+                      initials={(requester.display_name ?? requester.username ?? '??').slice(0, 2).toUpperCase()}
+                      size={40}
+                      showJersey={false}
+                    />
+                    <View style={{ flex: 1, marginLeft: 12 }}>
+                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>{requester.display_name ?? requester.username}</Text>
+                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, marginTop: 2 }}>@{requester.username}</Text>
                     </View>
-                    <View className="flex-1">
-                      <Text className="text-text-primary font-bold">{requester.display_name ?? requester.username}</Text>
-                      <Text className="text-text-muted text-xs font-sans">@{requester.username}</Text>
-                    </View>
-                    <TouchableOpacity
+                    <Pressable
                       onPress={() => respondRequest.mutate({ requestId: req.id, accept: false })}
-                      className="border border-loss px-3 py-1.5 rounded-lg mr-2"
+                      style={{ borderWidth: 1, borderColor: HG.down + '66', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, marginRight: 8 }}
                     >
-                      <Text className="text-loss text-xs font-bold">Ignore</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.down }}>Ignore</Text>
+                    </Pressable>
+                    <Pressable
                       onPress={() => respondRequest.mutate({ requestId: req.id, accept: true })}
-                      className="bg-brand px-3 py-1.5 rounded-lg"
+                      style={{ backgroundColor: HG.sky, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 }}
                     >
-                      <Text className="text-bg text-xs font-bold">Accept</Text>
-                    </TouchableOpacity>
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.jet }}>Accept</Text>
+                    </Pressable>
                   </View>
                 );
               })
@@ -229,28 +235,22 @@ export default function FriendsScreen() {
   );
 }
 
-function UserRow({ user, rankColor, action }: {
-  user: { username: string; display_name?: string; rank_tier?: string; total_wins?: number; total_losses?: number };
-  rankColor?: string;
+function UserRow({ user, action }: {
+  user: { username: string; display_name?: string | null; rank_tier?: string | null; total_wins?: number; total_losses?: number };
   action: React.ReactNode;
 }) {
+  const initials = (user.display_name ?? user.username ?? '??').slice(0, 2).toUpperCase();
   return (
-    <View className="flex-row items-center bg-surface border border-surface-border rounded-xl px-4 py-3 mb-3">
-      <View
-        className="w-10 h-10 rounded-full bg-surface-raised border items-center justify-center mr-3"
-        style={{ borderColor: rankColor ?? '#2A2A2E' }}
-      >
-        <Text className="text-text-primary text-base">
-          {user.display_name?.[0]?.toUpperCase() ?? user.username?.[0]?.toUpperCase() ?? '?'}
-        </Text>
-      </View>
-      <View className="flex-1">
-        <Text className="text-text-primary font-bold">{user.display_name ?? user.username}</Text>
-        <Text className="text-text-muted text-xs font-sans">
-          @{user.username} · <Text className="font-mono">{user.total_wins ?? 0}W {user.total_losses ?? 0}L</Text>
+    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: HG.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: HG.hairline }}>
+      <MonogramTile initials={initials} size={40} showJersey={false} />
+      <View style={{ flex: 1, marginLeft: 12 }}>
+        <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>{user.display_name ?? user.username}</Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, marginTop: 2 }}>
+          @{user.username} · {user.total_wins ?? 0}W {user.total_losses ?? 0}L
         </Text>
       </View>
       {action}
     </View>
   );
 }
+

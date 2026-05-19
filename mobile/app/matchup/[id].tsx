@@ -4,10 +4,11 @@
 // One file, two states: live in-progress vs. completed-final.
 // =============================================================================
 
+import { useEffect } from 'react';
 import { View, Text, ScrollView, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Svg, { Path } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
@@ -19,6 +20,32 @@ export default function MatchupScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuthStore();
+  const qc = useQueryClient();
+
+  // Realtime subscription — invalidate on activity events or score updates
+  useEffect(() => {
+    if (!id) return;
+    const channel = supabase
+      .channel(`matchup-live-${id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'matchup_activity_events',
+        filter: `matchup_id=eq.${id}`,
+      }, () => {
+        qc.invalidateQueries({ queryKey: ['matchup-detail', id] });
+      })
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'matchups',
+        filter: `id=eq.${id}`,
+      }, () => {
+        qc.invalidateQueries({ queryKey: ['matchup-detail', id] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [id, qc]);
 
   const { data, isLoading } = useQuery({
     queryKey: ['matchup-detail', id],
@@ -64,7 +91,6 @@ export default function MatchupScreen() {
       return { matchup: matchup as any, events: events ?? [], h2h: h2h ?? 0 };
     },
     enabled: !!id,
-    refetchInterval: 15_000,
   });
 
   if (isLoading || !data) {

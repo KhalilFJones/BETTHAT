@@ -1,7 +1,10 @@
 import { Tabs } from 'expo-router';
 import { View, Text, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQuery } from '@tanstack/react-query';
 import Svg, { Path, Circle } from 'react-native-svg';
+import { supabase } from '@/lib/supabase';
+import { useAuthStore } from '@/stores/auth.store';
 
 // Holy Grail V2 tab bar — Home · Market · Matchups · Sidebets · Profile.
 // Sky blue active, muted gray inactive. Plex Mono labels.
@@ -60,15 +63,27 @@ function TabIcon({
   iconName,
   focused,
   label,
+  badge = false,
 }: {
   iconName: string;
   focused: boolean;
   label: string;
+  badge?: boolean;
 }) {
   const color = focused ? SKY : MUTED;
   return (
     <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 6, gap: 3 }}>
-      <Icon name={iconName} color={color} />
+      <View style={{ position: 'relative' }}>
+        <Icon name={iconName} color={color} />
+        {badge && (
+          <View style={{
+            position: 'absolute', top: -2, right: -4,
+            width: 8, height: 8, borderRadius: 4,
+            backgroundColor: '#FF3B30',
+            borderWidth: 1.5, borderColor: JET,
+          }} />
+        )}
+      </View>
       <Text
         style={{
           fontSize: 10,
@@ -86,6 +101,23 @@ function TabIcon({
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { profile } = useAuthStore();
+
+  // SCRUM-198: Live badge on Matchups tab when user has an active/in-progress matchup
+  const { data: hasLive } = useQuery({
+    queryKey: ['has-live-matchup', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return false;
+      const { count } = await supabase
+        .from('matchups')
+        .select('id', { count: 'exact', head: true })
+        .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+        .in('status', ['matched', 'in_progress', 'live']);
+      return (count ?? 0) > 0;
+    },
+    enabled: !!profile?.id,
+    refetchInterval: 30_000,
+  });
 
   return (
     <Tabs
@@ -117,7 +149,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="matchups"
         options={{
-          tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} label="Matchups" />,
+          tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} label="Matchups" badge={!!hasLive} />,
         }}
       />
       <Tabs.Screen

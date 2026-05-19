@@ -80,6 +80,25 @@ export default function HomeScreen() {
     refetchInterval: 60_000,
   });
 
+  // Active matchup query (polls every 30s)
+  const { data: activeMatchup } = useQuery({
+    queryKey: ['home-active-matchup', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return null;
+      const { data } = await supabase
+        .from('matchups')
+        .select('id, status, user1_score, user2_score, user1_final_score, user2_final_score, user1_id, pot_amount')
+        .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+        .in('status', ['matched', 'in_progress', 'live'])
+        .order('started_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      return data;
+    },
+    enabled: !!profile?.id,
+    refetchInterval: 30_000,
+  });
+
   const tickerEntries = useMemo<TickerEntry[]>(
     () =>
       (data?.ticker ?? [])
@@ -96,6 +115,38 @@ export default function HomeScreen() {
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
       <ScreenHeader walletBalance={wallet?.balance} />
       <Ticker entries={tickerEntries} />
+
+      {/* Active matchup banner */}
+      {activeMatchup && (
+        <Pressable
+          onPress={() => router.push(`/matchup/${activeMatchup.id}` as any)}
+          style={{
+            marginHorizontal: 18, marginTop: 10, marginBottom: 2,
+            paddingHorizontal: 16, paddingVertical: 12,
+            backgroundColor: HG.sky + '18', borderRadius: 14,
+            borderWidth: 1, borderColor: HG.sky + '55',
+            flexDirection: 'row', alignItems: 'center',
+          }}
+        >
+          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: HG.sky, marginRight: 10 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.2, color: HG.sky, textTransform: 'uppercase' }}>
+              Live Matchup
+            </Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.ink, marginTop: 2 }}>
+              {(() => {
+                const meIs1 = activeMatchup.user1_id === profile?.id;
+                const myScore = Number(meIs1 ? (activeMatchup.user1_final_score ?? activeMatchup.user1_score) : (activeMatchup.user2_final_score ?? activeMatchup.user2_score));
+                const oppScore = Number(meIs1 ? (activeMatchup.user2_final_score ?? activeMatchup.user2_score) : (activeMatchup.user1_final_score ?? activeMatchup.user1_score));
+                return `You ${myScore.toFixed(1)} · Opp ${oppScore.toFixed(1)}  ·  ${fmtPrice(activeMatchup.pot_amount)} pot`;
+              })()}
+            </Text>
+          </View>
+          <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={HG.sky} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m9 18 6-6-6-6" />
+          </Svg>
+        </Pressable>
+      )}
 
       <ScrollView
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
