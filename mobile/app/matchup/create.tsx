@@ -63,6 +63,7 @@ export default function PlaceOrderScreen() {
 
   const [wager, setWager] = useState<string>('');
   const [submitted, setSubmitted] = useState(false);
+  const [matchupId, setMatchupId] = useState<string | undefined>();
   const [queueSec, setQueueSec] = useState(0);
 
   const wagerNum = Number(wager);
@@ -109,7 +110,10 @@ export default function PlaceOrderScreen() {
         const rake = Number((pot * 0.035).toFixed(2));
         const payout = Number((pot - rake).toFixed(2));
 
-        const { error: eMatch } = await supabase.from('matchups').insert({
+        // Remove the matched opponent from the queue first
+        await supabase.from('matchmaking_queue').delete().eq('id', match.id);
+
+        const { data: matchedRow, error: eMatch } = await supabase.from('matchups').insert({
           lineup1_id: match.lineup_id,
           lineup2_id: lineup.id,
           user1_id: match.user_id,
@@ -122,11 +126,9 @@ export default function PlaceOrderScreen() {
           status: 'matched',
           game_date: gameDate,
           matched_at: new Date().toISOString(),
-        } as never);
+        } as never).select('id').single();
         if (eMatch) throw eMatch;
-
-        // Remove the matched opponent from the queue
-        await supabase.from('matchmaking_queue').delete().eq('id', match.id);
+        return { matchupId: matchedRow.id, matched: true };
       } else {
         // No opponent yet — join the queue and create a pending matchup so the user can see it
         const { error: e2 } = await supabase
@@ -144,7 +146,7 @@ export default function PlaceOrderScreen() {
         const rake = Number((pot * 0.035).toFixed(2));
         const payout = Number((pot - rake).toFixed(2));
 
-        const { error: e3 } = await supabase.from('matchups').insert({
+        const { data: pendingRow, error: e3 } = await supabase.from('matchups').insert({
           lineup1_id: lineup.id,
           user1_id: profile.id,
           entry_tier: wagerNum,
@@ -153,14 +155,17 @@ export default function PlaceOrderScreen() {
           payout_amount: payout,
           status: 'pending',
           game_date: gameDate,
-        } as never);
+        } as never).select('id').single();
         if (e3) throw e3;
+        return { matchupId: pendingRow.id, matched: false };
       }
     },
-    onSuccess: () => {
+    onSuccess: (result: any) => {
       setSubmitted(true);
+      setMatchupId(result?.matchupId);
       qc.invalidateQueries({ queryKey: ['place-order-lineup'] });
       qc.invalidateQueries({ queryKey: ['player-market'] });
+      qc.invalidateQueries({ queryKey: ['matchups-list'] });
     },
   });
 
@@ -204,7 +209,7 @@ export default function PlaceOrderScreen() {
 
   // Pending Order state
   if (submitted) {
-    return <PendingOrderState lineup={lineup} wager={wagerNum} queueSec={queueSec} onCancel={() => router.replace('/(tabs)/matchups' as any)} />;
+    return <PendingOrderState lineup={lineup} wager={wagerNum} queueSec={queueSec} matchupId={matchupId} onCancel={() => router.replace('/(tabs)/matchups' as any)} />;
   }
 
   const picked = (lineup.lineup_players ?? []).sort((a: any, b: any) => a.slot_number - b.slot_number);
@@ -498,17 +503,43 @@ function SwipeToPlaceOrder({ enabled, onConfirm }: { enabled: boolean; onConfirm
 // =============================================================================
 
 function PendingOrderState({
-  lineup, wager, queueSec, onCancel,
+  lineup, wager, queueSec, onCancel, matchupId,
 }: {
-  lineup: any; wager: number; queueSec: number; onCancel: () => void;
+  lineup: any; wager: number; queueSec: number; onCancel: () => void; matchupId?: string;
 }) {
   const mm = String(Math.floor(queueSec / 60)).padStart(2, '0');
   const ss = String(queueSec % 60).padStart(2, '0');
   const router = useRouter();
   const { profile } = useAuthStore();
+  const qc = useQueryClient();
+  const [testMatching, setTestMatching] = useState(false);
 
-  // Demo helper: until a real matchmaker Edge Fn exists, surface any pending
-  // 'matched' matchup so the user can see Match Found (Screen 06.5) on demand.
+  // TEST MODE: after 10 seconds simulate a match being found by updating
+  // the pending matchup to 'matched' so the full lifecycle can be tested.
+  useEffect(() => {
+    if (!matchupId || !profile?.id) return;
+    const timer = setTimeout(async () => {
+      setTestMatching(true);
+      const rake = Number((wager * 2 * 0.035).toFixed(2));
+      await supabase.from('matchups').update({
+        status: 'matched',
+        // user2 = same user for test purposes so we can see both sides
+        user2_id: profile.id,
+        lineup2_id: lineup.id,
+        user2_max_wager: wager,
+        settled_wager: wager,
+        pot_amount: Number((wager * 2).toFixed(2)),
+        rake_amount: rake,
+        payout_amount: Number((wager * 2 - rake).toFixed(2)),
+        matched_at: new Date().toISOString(),
+      }).eq('id', matchupId);
+      qc.invalidateQueries({ queryKey: ['matchups-list'] });
+      setTestMatching(false);
+    }, 10_000);
+    return () => clearTimeout(timer);
+  }, [matchupId, profile?.id]);
+
+  // Poll for matched status
   const { data: matchedDemo } = useQuery({
     queryKey: ['matched-demo', profile?.id],
     queryFn: async () => {
@@ -524,7 +555,7 @@ function PendingOrderState({
       return data;
     },
     enabled: !!profile?.id,
-    refetchInterval: 5000,
+    refetchInterval: 3000,
   });
 
   return (
@@ -543,10 +574,12 @@ function PendingOrderState({
 
       <View style={{ paddingHorizontal: 18, paddingTop: 36, alignItems: 'center' }}>
         <Text style={{ fontFamily: FONT.serif, fontSize: 36, color: HG.ink, letterSpacing: -0.6 }}>
-          Order placed.
+          {matchedDemo?.id ? 'Match found!' : 'Order placed.'}
         </Text>
         <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, marginTop: 10, textAlign: 'center', lineHeight: 21 }}>
-          Looking for a match around your max wager.
+          {matchedDemo?.id
+            ? 'Your opponent has been matched. Tap below to see your matchup.'
+            : 'Looking for a match around your max wager.'}
         </Text>
 
         {/* Status pill */}
@@ -555,15 +588,17 @@ function PendingOrderState({
             flexDirection: 'row', alignItems: 'center', gap: 10,
             marginTop: 28,
             paddingHorizontal: 18, paddingVertical: 10,
-            backgroundColor: HG.surface,
+            backgroundColor: matchedDemo?.id ? HG.skySoft : HG.surface,
             borderRadius: 999,
             borderWidth: 1, borderColor: HG.skyEdge,
           }}
         >
-          <PulsingDot />
-          <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.ink, letterSpacing: 0.4 }}>
-            In queue · {mm}:{ss}
-          </Text>
+          {testMatching
+            ? <ActivityIndicator size="small" color={HG.sky} />
+            : matchedDemo?.id
+              ? <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.sky, letterSpacing: 0.4 }}>✓ Matched</Text>
+              : <><PulsingDot /><Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.ink, letterSpacing: 0.4 }}>In queue · {mm}:{ss}</Text></>
+          }
         </View>
 
         <View style={{ marginTop: 36, padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, width: '100%' }}>
@@ -583,18 +618,17 @@ function PendingOrderState({
           </View>
         </View>
 
-        {/* Demo handoff to Match Found — replaces the real matchmaker for now */}
         {matchedDemo?.id ? (
           <Pressable
             onPress={() => router.replace(`/matchup/found/${matchedDemo.id}` as any)}
             style={{
-              marginTop: 28, height: 48, paddingHorizontal: 22,
+              marginTop: 28, height: 52, paddingHorizontal: 28,
               borderRadius: 999, backgroundColor: HG.sky,
               alignItems: 'center', justifyContent: 'center',
             }}
           >
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
-              See your match
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+              View Matchup →
             </Text>
           </Pressable>
         ) : null}
@@ -604,6 +638,13 @@ function PendingOrderState({
             Cancel order
           </Text>
         </Pressable>
+
+        {/* TEST MODE badge */}
+        <View style={{ marginTop: 20, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: '#1a1a2e', borderRadius: 8, borderWidth: 1, borderColor: '#333' }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: '#666', letterSpacing: 0.8 }}>
+            TEST · auto-match in {Math.max(0, 10 - queueSec)}s
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
