@@ -563,13 +563,13 @@ function slateLabel(date: string, today: string): string {
 
 async function ensureBuildingLineup(userId: string, existing: InProgressLineup | null, slateDate: string): Promise<string> {
   if (existing?.id) return existing.id;
-  // Create a new in-progress lineup. entry_tier is the legacy NOT NULL column;
-  // populate with placeholder 25 since max_wager is the authoritative source.
+  // Create a new in-progress lineup. entry_tier must be a valid tier (1,5,10,20,50);
+  // use 5 as a placeholder since max_wager is the authoritative wager source.
   const { data, error } = await supabase
     .from('lineups')
     .insert({
       user_id: userId,
-      entry_tier: 25,
+      entry_tier: 5,
       status: 'building',
       total_cap_used: 0,
       game_date: slateDate,

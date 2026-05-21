@@ -27,7 +27,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import {
   HG, FONT, fmtPrice, playerLastName, playerInitials,
-  SALARY_CAP, MIN_WAGER, MAX_WAGER, LINEUP_SIZE,
+  SALARY_CAP, MIN_WAGER, LINEUP_SIZE,
 } from '@/lib/holygrail';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
@@ -69,10 +69,9 @@ export default function PlaceOrderScreen() {
   const balance = Number(wallet?.balance ?? 0);
 
   const validation = useMemo(() => {
-    if (!wager) return { ok: false, msg: '', helper: 'Floor $5 · Ceiling $50' };
+    if (!wager) return { ok: false, msg: '', helper: 'Floor $5 · No limit' };
     if (!Number.isFinite(wagerNum)) return { ok: false, msg: 'Enter a number', helper: '' };
     if (wagerNum < MIN_WAGER) return { ok: false, msg: `Minimum wager is $${MIN_WAGER}`, helper: '' };
-    if (wagerNum > MAX_WAGER) return { ok: false, msg: `Maximum wager is $${MAX_WAGER}`, helper: '' };
     if (wagerNum > balance) return { ok: false, msg: 'Insufficient buying power. Deposit to continue.', helper: '' };
     return { ok: true, msg: '', helper: 'You\'ll match at or below this amount.' };
   }, [wager, wagerNum, balance]);
@@ -221,7 +220,7 @@ export default function PlaceOrderScreen() {
                 keyboardType="numeric"
                 placeholder="0"
                 placeholderTextColor={HG.muted2}
-                maxLength={4}
+                maxLength={6}
                 style={{
                   fontFamily: FONT.monoMedium,
                   fontSize: 64,
@@ -245,9 +244,9 @@ export default function PlaceOrderScreen() {
               {validation.msg || validation.helper}
             </Text>
 
-            {/* Quick tap presets — official entry tiers */}
+            {/* Quick tap presets */}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 18 }}>
-              {[1, 5, 10, 20, 50].map((v) => {
+              {[5, 25, 50, 100, 500].map((v) => {
                 const active = wagerNum === v;
                 return (
                   <Pressable

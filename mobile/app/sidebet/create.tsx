@@ -13,7 +13,7 @@ import Svg, { Path } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { HG, FONT, fmtPrice, playerInitials, MIN_WAGER, MAX_WAGER } from '@/lib/holygrail';
+import { HG, FONT, fmtPrice, playerInitials, MIN_WAGER } from '@/lib/holygrail';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 const STATS = [
@@ -112,7 +112,7 @@ export default function SidebetCreateScreen() {
     mutationFn: async () => {
       if (!profile?.id || !playerId || !propLine) throw new Error('Pick a player and stat');
       const wagerNum = Number(wager);
-      if (wagerNum < MIN_WAGER || wagerNum > MAX_WAGER) throw new Error(`Wager must be $${MIN_WAGER}–$${MAX_WAGER}`);
+      if (wagerNum < MIN_WAGER) throw new Error(`Minimum wager is $${MIN_WAGER}`);
       if (Number(wallet?.balance ?? 0) < wagerNum) throw new Error('Insufficient buying power');
 
       const { error } = await supabase.from('sidebets').insert({
@@ -148,14 +148,13 @@ export default function SidebetCreateScreen() {
 
   const wagerNum = Number(wager);
   const balance = Number(wallet?.balance ?? 0);
-  const wagerOk = wagerNum >= MIN_WAGER && wagerNum <= MAX_WAGER && wagerNum <= balance;
+  const wagerOk = wagerNum >= MIN_WAGER && wagerNum <= balance;
   const formOk = !!playerId && !!propLine && wagerOk;
   const errorLine =
     !playerId ? 'Pick a player'
     : !propLine ? 'No Vegas line for this stat'
-    : !wager ? `Set wager $${MIN_WAGER}–$${MAX_WAGER}`
+    : !wager ? `Set wager (min $${MIN_WAGER})`
     : wagerNum < MIN_WAGER ? `Minimum wager is $${MIN_WAGER}`
-    : wagerNum > MAX_WAGER ? `Maximum wager is $${MAX_WAGER}`
     : wagerNum > balance ? 'Insufficient buying power'
     : null;
 

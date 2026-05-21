@@ -161,8 +161,7 @@ export function calcFantasyPoints(s: {
 
 export const SALARY_CAP = 500;
 export const LINEUP_SIZE = 3;
-export const MIN_WAGER = 1;
-export const MAX_WAGER = 50;
+export const MIN_WAGER = 5;
 /** Today's date in YYYY-MM-DD local time. Re-evaluated on each module load. */
 export const SLATE_DATE_FALLBACK = new Date().toISOString().slice(0, 10);
 
