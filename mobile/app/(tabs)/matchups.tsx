@@ -22,29 +22,41 @@ export default function MatchupsScreen() {
   const { data: matchups, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['matchups-list', profile?.id],
     queryFn: async () => {
-      if (!profile?.id) return [];
-      const { data, error } = await supabase
-        .from('matchups')
-        .select(`
-          id, status, settled_wager, pot_amount, payout_amount,
-          user1_id, user2_id, user1_score, user2_score, score_margin,
-          winner_user_id, game_date, started_at, completed_at, created_at,
-          u1:profiles!user1_id(id, username, display_name),
-          u2:profiles!user2_id(id, username, display_name)
-        `)
-        .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
-        .order('created_at', { ascending: false })
-        .limit(40);
-      if (error) throw error;
-      return data;
+      if (!profile?.id) return { matchups: [] as any[], unmatched: [] as any[] };
+      const [matchupsResult, queueResult] = await Promise.all([
+        supabase
+          .from('matchups')
+          .select(`
+            id, status, settled_wager, pot_amount, payout_amount,
+            user1_id, user2_id, user1_score, user2_score, score_margin,
+            winner_user_id, game_date, started_at, completed_at, created_at,
+            u1:profiles!user1_id(id, username, display_name),
+            u2:profiles!user2_id(id, username, display_name)
+          `)
+          .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+          .order('created_at', { ascending: false })
+          .limit(40),
+        supabase
+          .from('matchmaking_queue')
+          .select('id, lineup_id, max_wager, game_date, queued_at')
+          .eq('user_id', profile.id)
+          .gte('expires_at', new Date().toISOString()),
+      ]);
+      if (matchupsResult.error) throw matchupsResult.error;
+      const matchupLineupIds = new Set((matchupsResult.data ?? []).map((m: any) => m.lineup1_id).filter(Boolean));
+      // Only show queue entries that don't already have a matchup row
+      const unmatched = (queueResult.data ?? []).filter((q: any) => !matchupLineupIds.has(q.lineup_id));
+      return { matchups: matchupsResult.data ?? [], unmatched };
     },
     enabled: !!profile?.id,
     refetchInterval: 30_000,
   });
 
-  const live = (matchups ?? []).filter((m: any) => ['live', 'matched'].includes(m.status));
-  const completed = (matchups ?? []).filter((m: any) => m.status === 'completed');
-  const pending = (matchups ?? []).filter((m: any) => m.status === 'pending');
+  const allMatchups = matchups?.matchups ?? [];
+  const unmatched = matchups?.unmatched ?? [];
+  const live = allMatchups.filter((m: any) => ['live', 'matched'].includes(m.status));
+  const completed = allMatchups.filter((m: any) => m.status === 'completed');
+  const pending = allMatchups.filter((m: any) => m.status === 'pending');
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
@@ -52,6 +64,8 @@ export default function MatchupsScreen() {
 
       <FlatList
         data={[
+          ...(unmatched.length ? [{ kind: 'header' as const, label: 'Searching', count: unmatched.length }] : []),
+          ...unmatched.map((q: any) => ({ kind: 'queue' as const, q })),
           ...(pending.length ? [{ kind: 'header' as const, label: 'In queue', count: pending.length }] : []),
           ...pending.map((m: any) => ({ kind: 'row' as const, m })),
           ...(live.length ? [{ kind: 'header' as const, label: 'Live', count: live.length }] : []),
@@ -59,7 +73,11 @@ export default function MatchupsScreen() {
           ...(completed.length ? [{ kind: 'header' as const, label: 'Completed', count: completed.length }] : []),
           ...completed.map((m: any) => ({ kind: 'row' as const, m })),
         ]}
-        keyExtractor={(item, i) => (item.kind === 'header' ? `h-${(item as any).label}-${i}` : `m-${(item as any).m.id}`)}
+        keyExtractor={(item, i) => {
+          if (item.kind === 'header') return `h-${(item as any).label}-${i}`;
+          if (item.kind === 'queue') return `q-${(item as any).q.id}`;
+          return `m-${(item as any).m.id}`;
+        }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
         contentContainerStyle={{ paddingBottom: 80 }}
         ListEmptyComponent={
@@ -71,7 +89,7 @@ export default function MatchupsScreen() {
                 No <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>matchups</Text> yet
               </Text>
               <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, lineHeight: 21 }}>
-                Build a 3-player lineup in the Market and place an order. The matchmaker will pair you with a counter-bidder within $5 of your max wager.
+                Build a 3-player lineup in the Market and place an order to get matched with an opponent.
               </Text>
               <Pressable
                 onPress={() => router.push('/(tabs)/lineup' as any)}
@@ -88,6 +106,21 @@ export default function MatchupsScreen() {
           if (item.kind === 'header') {
             const h = item as { kind: 'header'; label: string; count: number };
             return <SectionHead word={h.label} label={String(h.count)} />;
+          }
+          if (item.kind === 'queue') {
+            const q = (item as any).q;
+            return (
+              <View style={{ marginHorizontal: 18, marginVertical: 4, padding: 16, backgroundColor: HG.surface, borderRadius: 14, borderWidth: 1, borderColor: HG.hairline, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: HG.sky }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>Searching for opponent…</Text>
+                  <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, marginTop: 2 }}>
+                    Wager: ${Number(q.max_wager).toFixed(2)} · {q.game_date}
+                  </Text>
+                </View>
+                <ActivityIndicator size="small" color={HG.sky} />
+              </View>
+            );
           }
           const r = item as { kind: 'row'; m: any };
           return (

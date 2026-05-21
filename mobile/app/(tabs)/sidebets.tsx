@@ -118,8 +118,10 @@ export default function SidebetsScreen() {
   // ── Realtime: prepend new sidebets (new/hot tabs only) ──
   useEffect(() => {
     if (activeTab === 'friends' || activeTab === 'my-takes') return;
+    // Use a unique channel name each mount to avoid "cannot add callbacks after subscribe()" error
+    const channelName = `sidebets-live-${activeTab}-${Date.now()}`;
     const channel = supabase
-      .channel('sidebets-new')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'sidebets' },
