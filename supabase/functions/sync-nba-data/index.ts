@@ -30,10 +30,18 @@ const ESPN_STATUS: Record<string, string> = {
   '3': 'final',
 };
 
-// Fantasy points formula (must match settle_matchup RPC):
-// pts + reb*1.2 + ast*1.5 + stl*3 + blk*3 - to*1
-function calcFP(pts: number, reb: number, ast: number, stl: number, blk: number, to: number): number {
-  return pts + reb * 1.2 + ast * 1.5 + stl * 3 + blk * 3 - to;
+// ESPN uses non-standard abbreviations for 6 teams — map to our canonical ones
+const ESPN_ABBREV_MAP: Record<string, string> = {
+  'NY':   'NYK',
+  'SA':   'SAS',
+  'GS':   'GSW',
+  'NO':   'NOP',
+  'UTAH': 'UTA',
+  'WSH':  'WAS',
+};
+
+function normalizeAbbrev(abbrev: string): string {
+  return ESPN_ABBREV_MAP[abbrev] ?? abbrev;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -54,13 +62,13 @@ async function espnFetch(url: string): Promise<any> {
 // Upsert a team row from ESPN team object, return our UUID
 // ──────────────────────────────────────────────────────────────────────────────
 async function upsertTeam(espnTeam: any): Promise<string> {
-  // Use abbreviation as conflict key — existing seeded rows have external_id=NULL,
-  // so the first sync updates them with ESPN data including the external_id.
+  // Normalize ESPN abbreviation to our canonical form (e.g., NY→NYK, SA→SAS)
+  const abbrev = normalizeAbbrev(espnTeam.abbreviation);
   const { data, error } = await supabase
     .from('nba_teams')
     .upsert({
-      external_id: espnTeam.id,
-      abbreviation: espnTeam.abbreviation,
+      external_id: String(espnTeam.id),
+      abbreviation: abbrev,
       full_name: espnTeam.displayName,
       city: espnTeam.location,
       primary_color: `#${espnTeam.color ?? '000000'}`,
@@ -71,7 +79,7 @@ async function upsertTeam(espnTeam: any): Promise<string> {
     }, { onConflict: 'abbreviation', ignoreDuplicates: false })
     .select('id')
     .single();
-  if (error) throw new Error(`upsertTeam ${espnTeam.abbreviation}: ${error.message}`);
+  if (error) throw new Error(`upsertTeam ${abbrev}: ${error.message}`);
   return data.id;
 }
 
@@ -88,15 +96,20 @@ async function upsertPlayer(athlete: any, teamAbbrev: string, teamId: string): P
   const jersey        = (athlete.jersey ?? '').replace(/\D/g, '');
   const tickerHandle  = `${lastNameClean}${jersey}`;
 
+  // Normalize team abbreviation (ESPN may use NY instead of NYK, etc.)
+  const normalizedAbbrev = normalizeAbbrev(teamAbbrev);
+
+  // Conflict on full_name so manually-seeded rows get updated with ESPN external_id.
+  // Our DB has a unique index on full_name (nba_players_full_name_uq).
   const { data, error } = await supabase
     .from('nba_players')
     .upsert({
-      external_id: athlete.id,
+      external_id: String(athlete.id),
       full_name: athlete.displayName,
       first_name: firstName,
       last_name: lastName,
-      team: athlete.team?.displayName ?? teamAbbrev,
-      team_abbreviation: teamAbbrev,
+      team: athlete.team?.displayName ?? normalizedAbbrev,
+      team_abbreviation: normalizedAbbrev,
       nba_team_id: teamId,
       position: athlete.position?.abbreviation ?? 'F',
       jersey_number: athlete.jersey ?? '',
@@ -104,7 +117,7 @@ async function upsertPlayer(athlete: any, teamAbbrev: string, teamId: string): P
       ticker_handle: tickerHandle,
       is_active: true,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'external_id', ignoreDuplicates: false })
+    }, { onConflict: 'full_name', ignoreDuplicates: false })
     .select('id')
     .single();
   if (error) throw new Error(`upsertPlayer ${athlete.displayName}: ${error.message}`);
@@ -166,8 +179,6 @@ async function syncBoxScore(espnEventId: string, gameUuid: string, gameDate: str
       const mins = statMap['minutes']    ?? 0;
       const pm   = statMap['plusMinus']  ?? 0;
 
-      const fp   = calcFP(pts, reb, ast, stl, blk, to);
-
       const { error: statsErr } = await supabase
         .from('player_game_stats')
         .upsert({
@@ -186,7 +197,7 @@ async function syncBoxScore(espnEventId: string, gameUuid: string, gameDate: str
           free_throws_made: ftm,
           free_throws_attempted: fta,
           plus_minus: pm,
-          fantasy_points: fp,
+          // fantasy_points is a generated column — do not insert it
           status: 'active',
           is_final: isFinal,
           updated_at: new Date().toISOString(),
@@ -278,7 +289,10 @@ async function syncScoreboard(dateStr?: string): Promise<object> {
     const isLive      = statusType === '2';
     const gameStatus  = ESPN_STATUS[statusType] ?? 'scheduled';
     const tipOffTime  = event.date;
-    const gameDate    = tipOffTime.slice(0, 10);
+    // ESPN dates are UTC; NBA games tipoff in US Eastern time (UTC-4/5).
+    // Convert to ET so a 7pm ET game isn't stored as the next UTC day.
+    const gameDateET  = new Date(new Date(tipOffTime).toLocaleString('en-US', { timeZone: 'America/New_York' }));
+    const gameDate    = `${gameDateET.getFullYear()}-${String(gameDateET.getMonth()+1).padStart(2,'0')}-${String(gameDateET.getDate()).padStart(2,'0')}`;
 
     const homeComp = comp.competitors?.find((c: any) => c.homeAway === 'home');
     const awayComp = comp.competitors?.find((c: any) => c.homeAway === 'away');
@@ -302,9 +316,9 @@ async function syncScoreboard(dateStr?: string): Promise<object> {
         external_id: espnEventId,
         season: String(data.season?.year ?? new Date().getFullYear()),
         home_team: homeComp.team.displayName,
-        home_team_abbreviation: homeComp.team.abbreviation,
+        home_team_abbreviation: normalizeAbbrev(homeComp.team.abbreviation),
         away_team: awayComp.team.displayName,
-        away_team_abbreviation: awayComp.team.abbreviation,
+        away_team_abbreviation: normalizeAbbrev(awayComp.team.abbreviation),
         home_team_id: homeTeamId,
         away_team_id: awayTeamId,
         game_date: gameDate,
@@ -372,9 +386,17 @@ async function syncScoreboard(dateStr?: string): Promise<object> {
 // Handler
 // ──────────────────────────────────────────────────────────────────────────────
 Deno.serve(async (req) => {
-  const auth = req.headers.get('Authorization') ?? '';
-  if (auth !== `Bearer ${SERVICE_KEY}`) {
-    return resp(401, { error: 'service role required' });
+  // verify_jwt is disabled (config.toml). We authenticate two ways:
+  //   1. Internal cron calls: x-sync-secret header must match NBA_SYNC_SECRET env var
+  //   2. Manual calls: Authorization: Bearer <service_role_key>
+  const syncSecret = Deno.env.get('NBA_SYNC_SECRET') ?? '';
+  const incomingSecret = req.headers.get('x-sync-secret') ?? '';
+  const authHeader = req.headers.get('authorization') ?? '';
+  const isServiceRole = authHeader.startsWith('Bearer ') && authHeader.split(' ')[1] === Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const isCronCall = syncSecret.length > 0 && incomingSecret === syncSecret;
+
+  if (!isServiceRole && !isCronCall) {
+    return resp(401, { error: 'unauthorized' });
   }
 
   let body: { date?: string; event_id?: string } = {};

@@ -44,47 +44,35 @@ export default function SidebetCreateScreen() {
   const [wager, setWager] = useState('');
   const [search, setSearch] = useState('');
 
-  // Tonight's draftable players + prop lines (joined)
+  // All active NBA players — sorted by most recent game availability first,
+  // then alphabetically. Users can search by name, team, or position.
   const { data: players, isLoading } = useQuery({
     queryKey: ['sidebet-players'],
     queryFn: async () => {
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: dateRow } = await supabase
-        .from('player_game_availability')
-        .select('game_date')
-        .lte('game_date', today)
-        .order('game_date', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const slateDate = (dateRow as any)?.game_date ?? today;
       const { data, error } = await supabase
-        .from('player_game_availability')
-        .select(`
-          game_id, game_date,
-          nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position),
-          nba_games!inner(id, home_team_abbreviation, away_team_abbreviation, status, tip_off_time)
-        `)
-        .eq('game_date', slateDate)
-        .eq('is_draftable', true);
+        .from('nba_players')
+        .select('id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position, season_avg_pts, is_injured')
+        .eq('is_active', true)
+        .order('season_avg_pts', { ascending: false })
+        .limit(400);
       if (error) throw error;
-      return (data ?? []).map((row: any) => ({
-        ...row.nba_players,
-        game: row.nba_games,
-      }));
+      // Each player gets a null `game` — prop line lookup is still player+stat based
+      return (data ?? []).map((p: any) => ({ ...p, game: null }));
     },
   });
 
-  // Prop lines for selected player + stat
+  // Prop lines for selected player + stat — first check most recent active line
   const { data: propLine } = useQuery({
     queryKey: ['prop-line', playerId, stat],
     queryFn: async () => {
       if (!playerId) return null;
       const { data, error } = await supabase
         .from('prop_lines')
-        .select('id, line_value, over_odds, under_odds, source')
+        .select('id, line_value, over_odds, under_odds, source, game_id')
         .eq('player_id', playerId)
         .eq('stat_category', stat)
         .eq('is_active', true)
+        .order('id', { ascending: false })
         .maybeSingle();
       if (error) throw error;
       return data;
@@ -92,11 +80,37 @@ export default function SidebetCreateScreen() {
     enabled: !!playerId,
   });
 
+  // Resolve game_id for the sidebet — use propLine's game or most recent scheduled game
+  const { data: resolvedGameId } = useQuery({
+    queryKey: ['sidebet-game-id', playerId, propLine?.game_id],
+    queryFn: async () => {
+      if (propLine?.game_id) return propLine.game_id as string;
+      if (!playerId) return null;
+      // Find the most recent or upcoming game for this player's team
+      const { data: playerRow } = await supabase
+        .from('nba_players')
+        .select('team_abbreviation')
+        .eq('id', playerId)
+        .single();
+      if (!playerRow) return null;
+      const today = new Date().toISOString().slice(0, 10);
+      const { data: gameRow } = await supabase
+        .from('nba_games')
+        .select('id')
+        .or(`home_team_abbreviation.eq.${playerRow.team_abbreviation},away_team_abbreviation.eq.${playerRow.team_abbreviation}`)
+        .gte('game_date', today)
+        .not('status', 'in', '("postponed","cancelled")')
+        .order('game_date', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      return (gameRow as any)?.id ?? null;
+    },
+    enabled: !!playerId,
+  });
+
   const postMutation = useMutation({
     mutationFn: async () => {
       if (!profile?.id || !playerId || !propLine) throw new Error('Pick a player and stat');
-      const player = players?.find((p) => p.id === playerId);
-      if (!player) throw new Error('Player not found');
       const wagerNum = Number(wager);
       if (wagerNum < MIN_WAGER || wagerNum > MAX_WAGER) throw new Error(`Wager must be $${MIN_WAGER}–$${MAX_WAGER}`);
       if (Number(wallet?.balance ?? 0) < wagerNum) throw new Error('Insufficient buying power');
@@ -104,7 +118,7 @@ export default function SidebetCreateScreen() {
       const { error } = await supabase.from('sidebets').insert({
         creator_id: profile.id,
         player_id: playerId,
-        game_id: player.game.id,
+        game_id: resolvedGameId ?? null,
         prop_line_id: propLine.id,
         stat_category: stat,
         line_value: propLine.line_value,
@@ -125,8 +139,11 @@ export default function SidebetCreateScreen() {
   const filtered = useMemo(() => {
     if (!players) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return players;
-    return players.filter((p) => `${p.full_name} ${p.ticker_handle ?? ''} ${p.team_abbreviation}`.toLowerCase().includes(q));
+    // When no search query, show top 20 players by pts avg
+    if (!q) return players.slice(0, 20);
+    return players.filter((p: any) =>
+      `${p.full_name} ${p.ticker_handle ?? ''} ${p.team_abbreviation} ${p.position}`.toLowerCase().includes(q)
+    );
   }, [players, search]);
 
   const wagerNum = Number(wager);
@@ -171,32 +188,41 @@ export default function SidebetCreateScreen() {
             </Svg>
             <TextInput
               value={search}
-              onChangeText={setSearch}
-              placeholder="Search players"
+              onChangeText={(v) => { setSearch(v); setPlayerId(null); }}
+              placeholder="Search all 450+ players…"
               placeholderTextColor={HG.muted}
               style={{ flex: 1, fontFamily: FONT.sans, fontSize: 14, color: HG.ink, padding: 0 }}
               autoCorrect={false}
               autoCapitalize="none"
             />
+            {search.length > 0 && (
+              <Pressable onPress={() => setSearch('')} hitSlop={8}>
+                <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={HG.muted} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+                  <Path d="M18 6 6 18M6 6l12 12" />
+                </Svg>
+              </Pressable>
+            )}
           </View>
+          {!search && (
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted2, marginTop: 6, letterSpacing: 0.5 }}>
+              Showing top 20 players · type to search all teams
+            </Text>
+          )}
         </View>
 
         {isLoading ? (
           <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
         ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 12, paddingBottom: 6, gap: 10 }}
-          >
-            {filtered.map((p) => {
+          <View style={{ paddingHorizontal: 18, marginTop: 12 }}>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}>
+            {filtered.map((p: any) => {
               const active = playerId === p.id;
               return (
                 <Pressable
                   key={p.id}
                   onPress={() => setPlayerId(p.id)}
                   style={{
-                    width: 96,
+                    width: '30%',
                     padding: 10,
                     borderRadius: 14,
                     backgroundColor: active ? HG.skySoft : HG.surface,
@@ -216,7 +242,8 @@ export default function SidebetCreateScreen() {
                 </Pressable>
               );
             })}
-          </ScrollView>
+            </View>
+          </View>
         )}
 
         {/* Stat + Line section — only meaningful once a player is picked */}

@@ -216,6 +216,27 @@ export default function ProfileScreen() {
           })}
         </ScrollView>
 
+        {/* Quick links */}
+        <View style={{ paddingHorizontal: 18, paddingTop: 14, gap: 10 }}>
+          <Pressable
+            onPress={() => router.push('/friends-lineups' as any)}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: HG.surface, borderRadius: 14, borderWidth: 1, borderColor: HG.hairline }}
+          >
+            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>Friends' Lineups</Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.muted }}>→</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => router.push('/promos' as any)}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, backgroundColor: HG.surface, borderRadius: 14, borderWidth: 1, borderColor: HG.up + '33' }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>Promos & Offers</Text>
+              <Text style={{ fontSize: 14 }}>🎁</Text>
+            </View>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.muted }}>→</Text>
+          </Pressable>
+        </View>
+
         {/* Prior matchups */}
         <SectionHead word="Prior" emphasis="matchups" label={String(data?.matchups?.length ?? 0)} />
         <View style={{ paddingHorizontal: 18, gap: 8 }}>

@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { SLATE_DATE_FALLBACK } from '@/lib/holygrail';
 
 // Holy Grail Player Market data fetcher. Returns:
 //   - tonight: every player playing tonight (with current price + tier)
@@ -86,35 +85,28 @@ export interface MarketData {
   trending: TrendingRow[];
 }
 
-async function fetchMarket(userId: string): Promise<MarketData> {
+async function fetchMarket(userId: string, slateDate: string): Promise<MarketData> {
   const sixHoursAgo = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
-  const today = new Date().toISOString().slice(0, 10);
 
-  // Find the most recent slate that has player availability (handles off-days / dev data).
-  const { data: dateRow } = await supabase
+  const tonightQ = await supabase
     .from('player_game_availability')
-    .select('game_date')
-    .lte('game_date', today)
-    .order('game_date', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  const slateDate = (dateRow as any)?.game_date ?? today;
+    .select(`
+      is_draftable,
+      nba_players!inner(
+        id, full_name, first_name, last_name, position, jersey_number,
+        team_abbreviation, ticker_handle, salary_tier, is_injured, injury_note,
+        season_avg_fpts, last5_avg_fpts,
+        player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, demand_count_1h, total_selections)
+      )
+    `)
+    .eq('game_date', slateDate)
+    .eq('is_draftable', true);
 
-  const [tonightQ, historyQ, lineupQ, trendingQ] = await Promise.all([
-    supabase
-      .from('player_game_availability')
-      .select(`
-        is_draftable,
-        nba_players!inner(
-          id, full_name, first_name, last_name, position, jersey_number,
-          team_abbreviation, ticker_handle, salary_tier, is_injured, injury_note,
-          season_avg_fpts, last5_avg_fpts,
-          player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, demand_count_1h, total_selections)
-        )
-      `)
-      .eq('game_date', slateDate)
-      .eq('is_draftable', true),
+  const tonightPlayerIds = ((tonightQ.data ?? []) as any[])
+    .map((row) => row.nba_players?.id)
+    .filter(Boolean);
 
+  const [historyQ, lineupQ, trendingQ] = await Promise.all([
     supabase
       .from('price_history')
       .select('player_id, price, recorded_at')
@@ -136,14 +128,17 @@ async function fetchMarket(userId: string): Promise<MarketData> {
       .limit(1)
       .maybeSingle(),
 
-    supabase
-      .from('player_prices')
-      .select(`
-        player_id, current_price, price_change_pct_24h, demand_count_1h,
-        nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position)
-      `)
-      .order('demand_count_1h', { ascending: false })
-      .limit(8),
+    tonightPlayerIds.length > 0
+      ? supabase
+          .from('player_prices')
+          .select(`
+            player_id, current_price, price_change_pct_24h, demand_count_1h,
+            nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position)
+          `)
+          .in('player_id', tonightPlayerIds)
+          .order('demand_count_1h', { ascending: false })
+          .limit(8)
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   const errs = [tonightQ.error, historyQ.error, lineupQ.error, trendingQ.error].filter(Boolean);
@@ -169,12 +164,103 @@ async function fetchMarket(userId: string): Promise<MarketData> {
   };
 }
 
-export function usePlayerMarket(userId: string | undefined) {
+export function usePlayerMarket(userId: string | undefined, slateDate?: string) {
+  const date = slateDate ?? new Date().toISOString().slice(0, 10);
   return useQuery({
-    queryKey: ['player-market', userId],
-    queryFn: () => fetchMarket(userId!),
+    queryKey: ['player-market', userId, date],
+    queryFn: () => fetchMarket(userId!, date),
     enabled: !!userId,
     staleTime: 30_000,
     refetchInterval: 60_000,
+  });
+}
+
+// ── Upcoming slates — which days have NBA games this week ───────────────────
+
+export interface SlateDay {
+  game_date: string;  // YYYY-MM-DD
+  has_live: boolean;
+  game_count: number;
+}
+
+export function useUpcomingSlates() {
+  return useQuery({
+    queryKey: ['upcoming-slates'],
+    queryFn: async () => {
+      const today = new Date().toISOString().slice(0, 10);
+      const nextWeek = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from('nba_games')
+        .select('game_date, status')
+        .gte('game_date', today)
+        .lte('game_date', nextWeek)
+        .not('status', 'in', '("postponed","cancelled")')
+        .order('game_date', { ascending: true });
+
+      // Group by date, collecting live flag and game count
+      const dateMap = new Map<string, { has_live: boolean; game_count: number }>();
+      for (const g of (data ?? []) as Array<{ game_date: string; status: string }>) {
+        const date = String(g.game_date);
+        const existing = dateMap.get(date) ?? { has_live: false, game_count: 0 };
+        dateMap.set(date, {
+          has_live: existing.has_live || g.status === 'live' || g.status === 'halftime',
+          game_count: existing.game_count + 1,
+        });
+      }
+      // Always ensure today appears even if no games yet in DB
+      if (!dateMap.has(today)) dateMap.set(today, { has_live: false, game_count: 0 });
+      return Array.from(dateMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([game_date, info]) => ({ game_date, ...info })) as SlateDay[];
+    },
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+}
+
+// ── Live player stats — polls every 1s during live games ────────────────────
+// Returns a map of player_id → { fantasy_points, points, rebounds, assists }
+// for the current slate. Merge this over player cards so scores update in real time.
+export interface LiveStatRow {
+  player_id: string;
+  fantasy_points: number | null;
+  points: number | null;
+  rebounds: number | null;
+  assists: number | null;
+}
+
+export function useLivePlayerStats(playerIds: string[]) {
+  return useQuery({
+    queryKey: ['live-player-stats', playerIds],
+    queryFn: async () => {
+      if (playerIds.length === 0) return new Map<string, LiveStatRow>();
+      const today = new Date().toISOString().slice(0, 10);
+      const { data } = await supabase
+        .from('player_game_stats')
+        .select(`
+          player_id, fantasy_points, points, rebounds, assists,
+          nba_games!inner(game_date, status)
+        `)
+        .eq('nba_games.game_date', today)
+        .in('player_id', playerIds);
+      const m = new Map<string, LiveStatRow>();
+      for (const r of (data ?? []) as any[]) {
+        m.set(r.player_id, {
+          player_id: r.player_id,
+          fantasy_points: r.fantasy_points,
+          points: r.points,
+          rebounds: r.rebounds,
+          assists: r.assists,
+        });
+      }
+      return m;
+    },
+    enabled: playerIds.length > 0,
+    refetchInterval: (query) => {
+      // Only poll at 1s when at least one player has a live game today
+      const map = query.state.data;
+      if (!map) return 30_000;
+      return 1_000;
+    },
   });
 }

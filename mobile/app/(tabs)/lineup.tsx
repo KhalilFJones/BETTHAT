@@ -26,9 +26,12 @@ import { MonogramTile } from '@/components/holygrail/MonogramTile';
 import { Sparkline } from '@/components/holygrail/Sparkline';
 import {
   usePlayerMarket,
+  useLivePlayerStats,
+  useUpcomingSlates,
   type PlayerMarketRow,
   type TrendingRow,
   type InProgressLineup,
+  type SlateDay,
 } from '@/hooks/holygrail/usePlayerMarket';
 import { recomputeLineupCap } from '@/hooks/holygrail/lineupOps';
 
@@ -45,17 +48,45 @@ const PRICE_BUCKETS = [
 ] as const;
 type PriceBucketKey = (typeof PRICE_BUCKETS)[number]['key'];
 
+const SORT_OPTIONS = [
+  { key: 'price', label: 'Price ↓' },
+  { key: 'fpts', label: 'FPTS' },
+  { key: 'name', label: 'A–Z' },
+  { key: 'trending', label: 'Trending 🔥' },
+] as const;
+type SortKey = (typeof SORT_OPTIONS)[number]['key'];
+
+// Price direction filter
+const TREND_OPTIONS = [
+  { key: 'all',     label: 'All' },
+  { key: 'rising',  label: '↑ Rising' },
+  { key: 'falling', label: '↓ Falling' },
+] as const;
+type TrendKey = (typeof TREND_OPTIONS)[number]['key'];
+
 export default function PlayerMarketScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const { profile, wallet } = useAuthStore();
   const userId = profile?.id;
 
-  const { data, isLoading, isRefetching, refetch } = usePlayerMarket(userId);
+  const today = new Date().toISOString().slice(0, 10);
+  const [selectedSlate, setSelectedSlate] = useState<string>(today);
+
+  const { data: slates } = useUpcomingSlates();
+  const { data, isLoading, isRefetching, refetch } = usePlayerMarket(userId, selectedSlate);
+
+  // Live stats — polls every 1 second when games are live
+  const tonightIds = useMemo(() => (data?.tonight ?? []).map((p) => p.id), [data?.tonight]);
+  const { data: liveStats } = useLivePlayerStats(tonightIds);
 
   const [position, setPosition] = useState<Position>('ALL');
   const [priceBucket, setPriceBucket] = useState<PriceBucketKey>('any');
+  const [teamFilter, setTeamFilter] = useState<string>('ALL');
+  const [sortBy, setSortBy] = useState<SortKey>('price');
   const [search, setSearch] = useState('');
+  const [trendFilter, setTrendFilter] = useState<TrendKey>('all');
+  const [hideInjured, setHideInjured] = useState(false);
 
   const lineup = data?.lineup ?? null;
   const pickedIds = useMemo(() => {
@@ -63,6 +94,18 @@ export default function PlayerMarketScreen() {
     if (lineup) for (const lp of lineup.lineup_players) s.add(lp.nba_players.id);
     return s;
   }, [lineup]);
+
+  const teams = useMemo(() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    for (const p of (data?.tonight ?? [])) {
+      if (!seen.has(p.team_abbreviation)) {
+        seen.add(p.team_abbreviation);
+        list.push(p.team_abbreviation);
+      }
+    }
+    return list.sort();
+  }, [data?.tonight]);
 
   // Filter + sort
   const players = useMemo(() => {
@@ -73,18 +116,27 @@ export default function PlayerMarketScreen() {
       .filter((p) => p.player_prices != null)
       .filter((p) => {
         if (position !== 'ALL' && p.position !== position) return false;
-        if (q && !`${p.full_name} ${p.ticker_handle} ${p.team_abbreviation}`.toLowerCase().includes(q)) return false;
+        if (teamFilter !== 'ALL' && p.team_abbreviation !== teamFilter) return false;
+        if (q && !`${p.full_name} ${p.team_abbreviation}`.toLowerCase().includes(q)) return false;
         const price = Number(p.player_prices!.current_price);
         if (price < bucket.lo || price >= bucket.hi) return false;
+        // Injury filter
+        if (hideInjured && p.is_injured) return false;
+        // Price trend direction filter
+        if (trendFilter === 'rising' && Number(p.player_prices!.price_change_pct_24h ?? 0) <= 0) return false;
+        if (trendFilter === 'falling' && Number(p.player_prices!.price_change_pct_24h ?? 0) >= 0) return false;
         return true;
       })
       .sort((a, b) => {
         const al = a.player_prices!.is_locked ? 1 : 0;
         const bl = b.player_prices!.is_locked ? 1 : 0;
         if (al !== bl) return al - bl;
-        return Number(b.player_prices!.current_price) - Number(a.player_prices!.current_price);
+        if (sortBy === 'price') return Number(b.player_prices!.current_price) - Number(a.player_prices!.current_price);
+        if (sortBy === 'fpts') return Number(b.last5_avg_fpts ?? 0) - Number(a.last5_avg_fpts ?? 0);
+        if (sortBy === 'trending') return Number(b.player_prices!.demand_count_1h ?? 0) - Number(a.player_prices!.demand_count_1h ?? 0);
+        return (a.full_name ?? '').localeCompare(b.full_name ?? '');
       });
-  }, [data?.tonight, position, priceBucket, search]);
+  }, [data?.tonight, position, teamFilter, priceBucket, search, sortBy, trendFilter, hideInjured]);
 
   // Ticker = top 16 absolute movers in tonight's slate
   const tickerEntries = useMemo<TickerEntry[]>(() => {
@@ -104,7 +156,7 @@ export default function PlayerMarketScreen() {
   const addMutation = useMutation({
     mutationFn: async (vars: { player: PlayerMarketRow; price: number }) => {
       if (!userId) throw new Error('Not signed in');
-      const lineupId = await ensureBuildingLineup(userId, lineup);
+      const lineupId = await ensureBuildingLineup(userId, lineup, selectedSlate);
       const usedSlots = new Set((lineup?.lineup_players ?? []).map((lp) => lp.slot_number));
       const nextSlot = [1, 2, 3].find((n) => !usedSlots.has(n));
       if (!nextSlot) throw new Error('Lineup full');
@@ -165,8 +217,27 @@ export default function PlayerMarketScreen() {
         }
         ListHeaderComponent={
           <View>
+            {/* Slate picker — Today / upcoming game days this week */}
+            {slates && slates.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 4, gap: 8 }}
+              >
+                {slates.map((s) => (
+                  <SlatePill
+                    key={s.game_date}
+                    slate={s}
+                    today={today}
+                    active={selectedSlate === s.game_date}
+                    onPress={() => setSelectedSlate(s.game_date)}
+                  />
+                ))}
+              </ScrollView>
+            )}
+
             {/* Search */}
-            <View style={{ paddingHorizontal: 18, paddingTop: 18, paddingBottom: 8 }}>
+            <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 8 }}>
               <View
                 style={{
                   flexDirection: 'row',
@@ -187,7 +258,7 @@ export default function PlayerMarketScreen() {
                 <TextInput
                   value={search}
                   onChangeText={setSearch}
-                  placeholder="Search players or tickers"
+                  placeholder="Search players..."
                   placeholderTextColor={HG.muted}
                   style={{
                     flex: 1,
@@ -281,10 +352,146 @@ export default function PlayerMarketScreen() {
               })}
             </ScrollView>
 
+            {/* Team filters */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 6, gap: 8 }}
+            >
+              {['ALL', ...teams].map((team) => {
+                const active = teamFilter === team;
+                return (
+                  <Pressable
+                    key={team}
+                    onPress={() => setTeamFilter(team)}
+                    style={{
+                      height: 28,
+                      paddingHorizontal: 12,
+                      borderRadius: 999,
+                      backgroundColor: active ? HG.skySoft : 'transparent',
+                      borderWidth: 1,
+                      borderColor: active ? HG.skyEdge : HG.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: active ? FONT.monoBold : FONT.monoMedium,
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        color: active ? HG.sky : HG.muted,
+                      }}
+                    >
+                      {team === 'ALL' ? 'All Teams' : team}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Sort chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 4, gap: 8 }}
+            >
+              {SORT_OPTIONS.map((option) => {
+                const active = sortBy === option.key;
+                return (
+                  <Pressable
+                    key={option.key}
+                    onPress={() => setSortBy(option.key)}
+                    style={{
+                      height: 28,
+                      paddingHorizontal: 12,
+                      borderRadius: 999,
+                      backgroundColor: active ? HG.skySoft : 'transparent',
+                      borderWidth: 1,
+                      borderColor: active ? HG.skyEdge : HG.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: active ? FONT.monoBold : FONT.monoMedium,
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        color: active ? HG.sky : HG.muted,
+                      }}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Price trend direction chips */}
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 4, gap: 8 }}
+            >
+              {TREND_OPTIONS.map((option) => {
+                const active = trendFilter === option.key;
+                const accent = option.key === 'rising' ? HG.up : option.key === 'falling' ? HG.down : null;
+                return (
+                  <Pressable
+                    key={option.key}
+                    onPress={() => setTrendFilter(option.key)}
+                    style={{
+                      height: 28,
+                      paddingHorizontal: 12,
+                      borderRadius: 999,
+                      backgroundColor: active && accent ? accent + '18' : active ? HG.skySoft : 'transparent',
+                      borderWidth: 1,
+                      borderColor: active && accent ? accent + '55' : active ? HG.skyEdge : HG.hairline,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: active ? FONT.monoBold : FONT.monoMedium,
+                        fontSize: 10,
+                        letterSpacing: 0.6,
+                        color: active && accent ? accent : active ? HG.sky : HG.muted,
+                      }}
+                    >
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Injury & availability filters */}
+            <View style={{ paddingHorizontal: 18, paddingTop: 4, paddingBottom: 8, flexDirection: 'row', gap: 8 }}>
+              <Pressable
+                onPress={() => setHideInjured((v) => !v)}
+                style={{
+                  height: 28,
+                  paddingHorizontal: 12,
+                  borderRadius: 999,
+                  backgroundColor: hideInjured ? HG.downSoft : 'transparent',
+                  borderWidth: 1,
+                  borderColor: hideInjured ? HG.down + '55' : HG.hairline,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <Text style={{ fontFamily: hideInjured ? FONT.monoBold : FONT.monoMedium, fontSize: 10, letterSpacing: 0.6, color: hideInjured ? HG.down : HG.muted }}>
+                  {hideInjured ? 'Hiding OUT/INJ' : 'Show All'}
+                </Text>
+              </Pressable>
+            </View>
+
             {/* Trending carousel */}
             {data?.trending && data.trending.length > 0 && position === 'ALL' && !search ? (
               <>
-                <SectionHead word="" emphasis="Trending" emphasisFirst label="Last 4h" />
+                <SectionHead word="" emphasis="Trending" emphasisFirst label={slateLabel(selectedSlate, today)} />
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -297,7 +504,7 @@ export default function PlayerMarketScreen() {
               </>
             ) : null}
 
-            <SectionHead word="Playing" emphasis="Tonight" label={`${players.length} players`} />
+            <SectionHead word="Playing" emphasis={slateLabel(selectedSlate, today)} label={`${players.length} players`} />
           </View>
         }
         renderItem={({ item }) => (
@@ -344,7 +551,17 @@ export default function PlayerMarketScreen() {
 // HELPERS
 // =============================================================================
 
-async function ensureBuildingLineup(userId: string, existing: InProgressLineup | null): Promise<string> {
+/** Returns a human-readable label for the selected slate date. */
+function slateLabel(date: string, today: string): string {
+  if (date === today) return 'Tonight';
+  const tomorrow = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10);
+  if (date === tomorrow) return 'Tomorrow';
+  // e.g. "Thu May 22"
+  const d = new Date(date + 'T12:00:00Z');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+async function ensureBuildingLineup(userId: string, existing: InProgressLineup | null, slateDate: string): Promise<string> {
   if (existing?.id) return existing.id;
   // Create a new in-progress lineup. entry_tier is the legacy NOT NULL column;
   // populate with placeholder 25 since max_wager is the authoritative source.
@@ -355,7 +572,7 @@ async function ensureBuildingLineup(userId: string, existing: InProgressLineup |
       entry_tier: 25,
       status: 'building',
       total_cap_used: 0,
-      game_date: new Date().toISOString().slice(0, 10),
+      game_date: slateDate,
     })
     .select('id')
     .single();
@@ -387,10 +604,7 @@ function TrendCard({ row, onPress }: { row: TrendingRow; onPress: () => void }) 
         <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={38} />
         <View style={{ flex: 1 }}>
           <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink, lineHeight: 16 }}>
-            {playerLastName(p)}
-          </Text>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
-            {p.ticker_handle ?? ''}
+            {p.full_name}
           </Text>
         </View>
       </View>
@@ -407,16 +621,72 @@ function TrendCard({ row, onPress }: { row: TrendingRow; onPress: () => void }) 
 }
 
 // =============================================================================
+// SLATE PILL
+// =============================================================================
+
+function SlatePill({
+  slate, today, active, onPress,
+}: {
+  slate: SlateDay;
+  today: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const label = slateLabel(slate.game_date, today);
+  const showLive = slate.has_live;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        height: 36,
+        paddingHorizontal: 14,
+        borderRadius: 999,
+        backgroundColor: active ? HG.sky : HG.surface,
+        borderWidth: 1,
+        borderColor: active ? HG.sky : HG.hairline,
+      }}
+    >
+      {showLive && (
+        <View
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 4,
+            backgroundColor: active ? HG.jet : HG.up,
+          }}
+        />
+      )}
+      <Text
+        style={{
+          fontFamily: active ? FONT.monoBold : FONT.monoMedium,
+          fontSize: 11,
+          letterSpacing: 0.7,
+          color: active ? HG.jet : HG.muted,
+        }}
+      >
+        {label}
+        {slate.game_count > 0 ? ` · ${slate.game_count}G` : ''}
+      </Text>
+    </Pressable>
+  );
+}
+
+// =============================================================================
 // PLAYER ROW
 // =============================================================================
 
 function PlayerRow({
-  player, sparkPrices, isPicked, disabled, onAdd, onRemove, onTap,
+  player, sparkPrices, isPicked, disabled, liveFpts, onAdd, onRemove, onTap,
 }: {
   player: PlayerMarketRow;
   sparkPrices: number[];
   isPicked: boolean;
   disabled: boolean;
+  liveFpts?: number | null;
   onAdd: () => void;
   onRemove: () => void;
   onTap: () => void;
@@ -426,7 +696,8 @@ function PlayerRow({
   const dirColor = priceDirectionColor(pp.price_change_pct_24h);
   const addLabel = isLocked ? 'Out' : isPicked ? 'Added' : '+ Add';
   const addState: 'add' | 'added' | 'locked' = isLocked ? 'locked' : isPicked ? 'added' : 'add';
-  const proj = player.last5_avg_fpts != null ? Number(player.last5_avg_fpts).toFixed(1) : null;
+  const isLive = liveFpts != null;
+  const proj = isLive ? null : player.last5_avg_fpts != null ? Number(player.last5_avg_fpts).toFixed(1) : null;
 
   return (
     <Pressable
@@ -459,18 +730,20 @@ function PlayerRow({
           ) : null}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 3 }}>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4 }}>
-            {player.ticker_handle ?? ''}
-          </Text>
           <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted }}>
             {player.team_abbreviation} · {player.position}
           </Text>
-          {proj !== null && (
+          {isLive ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: HG.upSoft, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 8, color: HG.up, letterSpacing: 0.6 }}>LIVE</Text>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.up }}>{Number(liveFpts).toFixed(1)}</Text>
+            </View>
+          ) : proj !== null ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
               <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted2 }}>proj</Text>
               <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.ink2 }}>{proj}</Text>
             </View>
-          )}
+          ) : null}
           <DemandChip count={pp.demand_count_1h} />
         </View>
       </View>

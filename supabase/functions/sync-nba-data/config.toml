@@ -1,0 +1,4 @@
+[functions.sync-nba-data]
+# Disable JWT verification so pg_cron can call this function via a simple
+# internal secret header (x-sync-secret) without needing a Supabase JWT.
+verify_jwt = false

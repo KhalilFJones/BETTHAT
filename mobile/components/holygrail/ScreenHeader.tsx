@@ -12,11 +12,13 @@ interface Props {
   onFriendsPress?: () => void;
   /** Center wordmark. Defaults to BETTHAT. */
   brand?: string;
+  /** When true, replaces the friends icon with a ← back arrow that calls router.back(). */
+  showBack?: boolean;
 }
 
 // Holy Grail Top Bar — used on Home, Market, Matchups, Sidebets, Profile.
 // Friends icon left, BETTHAT wordmark center, wallet pill right.
-export function ScreenHeader({ walletBalance, onWalletPress, onFriendsPress, brand = 'BETTHAT' }: Props) {
+export function ScreenHeader({ walletBalance, onWalletPress, onFriendsPress, brand = 'BETTHAT', showBack }: Props) {
   const router = useRouter();
 
   return (
@@ -29,25 +31,44 @@ export function ScreenHeader({ walletBalance, onWalletPress, onFriendsPress, bra
         justifyContent: 'space-between',
       }}
     >
-      <Pressable
-        onPress={onFriendsPress ?? (() => router.push('/friends'))}
-        accessibilityLabel="Friends"
-        hitSlop={8}
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: 999,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
-          <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-          <Circle cx={9} cy={7} r={4} />
-          <Path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-          <Path d="M16 3.13a4 4 0 0 1 0 7.75" />
-        </Svg>
-      </Pressable>
+      {showBack ? (
+        <Pressable
+          onPress={() => router.back()}
+          accessibilityLabel="Go back"
+          hitSlop={8}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="m15 18-6-6 6-6" />
+          </Svg>
+        </Pressable>
+      ) : (
+        <Pressable
+          onPress={onFriendsPress ?? (() => router.push('/friends'))}
+          accessibilityLabel="Friends"
+          hitSlop={8}
+          style={{
+            width: 36,
+            height: 36,
+            borderRadius: 999,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+            <Circle cx={9} cy={7} r={4} />
+            <Path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            <Path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </Svg>
+        </Pressable>
+      )}
 
       <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, letterSpacing: 2.6, color: HG.ink }}>
         {brand}

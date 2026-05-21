@@ -21,12 +21,12 @@ import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
 import { SectionHead } from '@/components/holygrail/SectionHead';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
-type FeedTab = 'hot' | 'new' | 'friends';
+type FeedTab = 'hot' | 'new' | 'my-takes' | 'friends';
 
 const SIDEBET_SELECT = `
   id, creator_id, opponent_id, stat_category, line_value, creator_side,
   creator_reasoning, wager_amount, like_count, dislike_count, comment_count,
-  status, expires_at, created_at,
+  status, winner_id, expires_at, created_at,
   creator:profiles!creator_id(id, username, display_name, rank_tier),
   nba_players(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position),
   nba_games(id, home_team_abbreviation, away_team_abbreviation, status, tip_off_time)
@@ -57,6 +57,21 @@ export default function SidebetsScreen() {
     enabled: !!profile?.id,
   });
 
+  const { data: myTakes, isLoading: myTakesLoading, isRefetching: myTakesRefetching, refetch: myTakesRefetch } = useQuery({
+    queryKey: ['my-takes', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return [];
+      const { data } = await supabase
+        .from('sidebets')
+        .select(SIDEBET_SELECT)
+        .or(`creator_id.eq.${profile.id},opponent_id.eq.${profile.id}`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      return data ?? [];
+    },
+    enabled: !!profile?.id,
+  });
+
   // ── Main feed query, tab-aware ──
   const { data: sidebets, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['sidebets-feed', activeTab, profile?.id, friendIds],
@@ -66,6 +81,10 @@ export default function SidebetsScreen() {
         .select(SIDEBET_SELECT)
         .eq('is_open', true)
         .eq('status', 'open');
+
+      if (activeTab === 'my-takes') {
+        return { feed: [], myReactions: new Map<string, 'like' | 'dislike'>() };
+      }
 
       if (activeTab === 'hot') {
         q = q.order('like_count', { ascending: false }).order('created_at', { ascending: false });
@@ -98,7 +117,7 @@ export default function SidebetsScreen() {
 
   // ── Realtime: prepend new sidebets (new/hot tabs only) ──
   useEffect(() => {
-    if (activeTab === 'friends') return;
+    if (activeTab === 'friends' || activeTab === 'my-takes') return;
     const channel = supabase
       .channel('sidebets-new')
       .on(
@@ -165,15 +184,20 @@ export default function SidebetsScreen() {
     setReportTarget({ sidebetId, userId });
   }
 
+  const activeFeed = activeTab === 'my-takes' ? (myTakes ?? []) : (sidebets?.feed ?? []);
+  const activeLoading = activeTab === 'my-takes' ? myTakesLoading : isLoading;
+  const activeRefreshing = activeTab === 'my-takes' ? myTakesRefetching : isRefetching;
+  const activeCount = activeFeed.length;
+
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
       <ScreenHeader walletBalance={wallet?.balance} />
 
       {/* Tabs */}
       <View style={{ flexDirection: 'row', paddingHorizontal: 18, paddingTop: 8, paddingBottom: 4, gap: 8 }}>
-        {(['new', 'hot', 'friends'] as FeedTab[]).map((tab) => {
+        {(['new', 'hot', 'my-takes', 'friends'] as FeedTab[]).map((tab) => {
           const active = activeTab === tab;
-          const label = tab === 'new' ? 'New' : tab === 'hot' ? 'Hot 🔥' : 'Friends';
+          const label = tab === 'new' ? 'New' : tab === 'hot' ? 'Hot 🔥' : tab === 'my-takes' ? 'My Takes' : 'Friends';
           return (
             <Pressable
               key={tab}
@@ -194,40 +218,58 @@ export default function SidebetsScreen() {
       </View>
 
       <ScrollView
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
+        refreshControl={
+          <RefreshControl
+            refreshing={activeRefreshing}
+            onRefresh={() => {
+              refetch();
+              myTakesRefetch();
+            }}
+            tintColor={HG.sky}
+          />
+        }
         contentContainerStyle={{ paddingBottom: 80 }}
       >
         <SectionHead
-          word="Open"
-          emphasis="sidebets"
-          label={`${sidebets?.feed?.length ?? 0} ${activeTab}`}
+          word={activeTab === 'my-takes' ? 'Your' : 'Open'}
+          emphasis={activeTab === 'my-takes' ? 'takes' : 'sidebets'}
+          label={`${activeCount} ${activeTab}`}
         />
 
-        {isLoading ? (
+        {activeLoading ? (
           <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
-        ) : (sidebets?.feed ?? []).length === 0 ? (
+        ) : activeFeed.length === 0 ? (
           <EmptyState tab={activeTab} onPost={() => router.push('/sidebet/create' as any)} />
         ) : (
           <View style={{ paddingHorizontal: 18, gap: 16 }}>
-            {(sidebets?.feed ?? []).map((sb: any) => (
-              <SidebetCard
-                key={sb.id}
-                sidebet={sb}
-                myReaction={sidebets?.myReactions.get(sb.id)}
-                isOwnPost={sb.creator_id === profile?.id}
-                onAccept={() => router.push(`/sidebet/${sb.id}` as any)}
-                onPlayerTap={() => sb.nba_players && router.push(`/player/${sb.nba_players.id}` as any)}
-                onLike={() => reactMutation.mutate({
-                  sidebetId: sb.id,
-                  reaction: sidebets?.myReactions.get(sb.id) === 'like' ? 'clear' : 'like',
-                })}
-                onDislike={() => reactMutation.mutate({
-                  sidebetId: sb.id,
-                  reaction: sidebets?.myReactions.get(sb.id) === 'dislike' ? 'clear' : 'dislike',
-                })}
-                onReport={() => openReport(sb.id, sb.creator_id)}
-              />
-            ))}
+            {activeTab === 'my-takes'
+              ? activeFeed.map((sb: any) => (
+                  <MyTakeCard
+                    key={sb.id}
+                    sidebet={sb}
+                    userId={profile?.id ?? ''}
+                    onPlayerTap={() => sb.nba_players && router.push(`/player/${sb.nba_players.id}` as any)}
+                  />
+                ))
+              : activeFeed.map((sb: any) => (
+                  <SidebetCard
+                    key={sb.id}
+                    sidebet={sb}
+                    myReaction={sidebets?.myReactions.get(sb.id)}
+                    isOwnPost={sb.creator_id === profile?.id}
+                    onAccept={() => router.push(`/sidebet/${sb.id}` as any)}
+                    onPlayerTap={() => sb.nba_players && router.push(`/player/${sb.nba_players.id}` as any)}
+                    onLike={() => reactMutation.mutate({
+                      sidebetId: sb.id,
+                      reaction: sidebets?.myReactions.get(sb.id) === 'like' ? 'clear' : 'like',
+                    })}
+                    onDislike={() => reactMutation.mutate({
+                      sidebetId: sb.id,
+                      reaction: sidebets?.myReactions.get(sb.id) === 'dislike' ? 'clear' : 'dislike',
+                    })}
+                    onReport={() => openReport(sb.id, sb.creator_id)}
+                  />
+                ))}
           </View>
         )}
 
@@ -311,6 +353,7 @@ function EmptyState({ tab, onPost }: { tab: FeedTab; onPost: () => void }) {
   const messages: Record<FeedTab, string> = {
     new: 'No open sidebets right now. Post the first one.',
     hot: 'Nothing trending yet. Post a take and light the feed up.',
+    'my-takes': "You haven't posted any takes yet. Start by posting a take.",
     friends: 'None of your friends have open sidebets. Challenge them.',
   };
   return (
@@ -327,6 +370,111 @@ function EmptyState({ tab, onPost }: { tab: FeedTab; onPost: () => void }) {
             Post a Take
           </Text>
         </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// =============================================================================
+// MY TAKE CARD
+// =============================================================================
+
+function MyTakeCard({
+  sidebet, userId, onPlayerTap,
+}: {
+  sidebet: any;
+  userId: string;
+  onPlayerTap: () => void;
+}) {
+  const p = sidebet.nba_players;
+  const game = sidebet.nba_games;
+  const c = sidebet.creator;
+  const overSelected = sidebet.creator_side === 'OVER';
+  const statLabel = labelForStat(sidebet.stat_category);
+  const status = sidebet.status === 'completed'
+    ? sidebet.winner_id === userId ? 'WON' : 'LOST'
+    : sidebet.status === 'open' ? 'OPEN' : 'PENDING';
+  const statusColor = status === 'WON' ? HG.up : status === 'LOST' ? HG.down : status === 'OPEN' ? HG.sky : '#F5A623';
+  const statusBg = status === 'WON' ? HG.upSoft : status === 'LOST' ? HG.downSoft : status === 'OPEN' ? HG.skySoft : '#F5A62322';
+  const statusBorder = status === 'WON' ? HG.up + '44' : status === 'LOST' ? HG.down + '44' : status === 'OPEN' ? HG.skyEdge : '#F5A62355';
+
+  return (
+    <View style={{ backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.hairline, overflow: 'hidden' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 16, paddingBottom: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.sky, letterSpacing: 0.4 }}>
+            {c?.username ?? '—'}
+          </Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>
+            · {fmtRelative(sidebet.created_at)}
+          </Text>
+        </View>
+        <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, borderWidth: 1, borderColor: HG.skyEdge }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky, letterSpacing: 0.4 }}>
+            {fmtPrice(sidebet.wager_amount)}
+          </Text>
+        </View>
+      </View>
+
+      {sidebet.creator_reasoning ? (
+        <View style={{ paddingHorizontal: 16, paddingBottom: 14 }}>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14.5, color: HG.ink, lineHeight: 21 }}>
+            {sidebet.creator_reasoning}
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={{ marginHorizontal: 16, marginBottom: 14, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: HG.inputBg, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink2, letterSpacing: 0.4 }}>
+          {p?.full_name ?? '—'}
+        </Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>·</Text>
+        <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky, letterSpacing: 0.6 }}>
+          {statLabel}
+        </Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>·</Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink }}>
+          {Number(sidebet.line_value).toFixed(1)}
+        </Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>·</Text>
+        <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 4, backgroundColor: HG.skySoft }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.sky, letterSpacing: 0.8 }}>
+            {overSelected ? '↑ OVER' : '↓ UNDER'}
+          </Text>
+        </View>
+        {game && (
+          <>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>·</Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>
+              {game.away_team_abbreviation} @ {game.home_team_abbreviation}
+            </Text>
+          </>
+        )}
+      </View>
+
+      <Pressable onPress={onPlayerTap} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderTopWidth: 1, borderTopColor: HG.hairline }}>
+        {p ? <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={42} /> : null}
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>
+            {p?.full_name ?? '—'}
+          </Text>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted, marginTop: 2 }}>
+            {p?.team_abbreviation} · {p?.position}
+          </Text>
+        </View>
+      </Pressable>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 14, borderTopWidth: 1, borderColor: HG.hairline }}>
+        <View style={{ flexDirection: 'row', gap: 16, alignItems: 'center' }}>
+          <Counter label="LIKES" value={sidebet.like_count ?? 0} />
+          <Counter label="DISLIKES" value={sidebet.dislike_count ?? 0} />
+          <Counter label="REPLIES" value={sidebet.comment_count ?? 0} />
+        </View>
+        <View style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: statusBg, borderWidth: 1, borderColor: statusBorder }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: statusColor, letterSpacing: 1, textTransform: 'uppercase' }}>
+            {status}
+          </Text>
+        </View>
       </View>
     </View>
   );
@@ -395,7 +543,7 @@ function SidebetCard({
       {/* Bloomberg prop strip */}
       <View style={{ marginHorizontal: 16, marginBottom: 14, paddingHorizontal: 14, paddingVertical: 10, backgroundColor: HG.inputBg, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink2, letterSpacing: 0.4 }}>
-          {p?.full_name?.split(' ').pop() ?? '—'}
+          {p?.full_name ?? '—'}
         </Text>
         <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted2 }}>·</Text>
         <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky, letterSpacing: 0.6 }}>
@@ -430,8 +578,8 @@ function SidebetCard({
               <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>
                 {p?.full_name ?? '—'}
               </Text>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
-                {p?.ticker_handle ?? ''}
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 0.4, marginTop: 2 }}>
+                {p?.team_abbreviation ?? ''} · {p?.position ?? ''}
               </Text>
             </View>
           </View>
