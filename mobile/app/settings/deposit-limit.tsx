@@ -23,12 +23,12 @@ export default function DepositLimitScreen() {
   const { data: currentLimits, isLoading: limitsLoading } = useQuery({
     queryKey: ['rg-limits', profile?.id],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from('user_kyc' as never)
-        .select('daily_deposit_limit, weekly_loss_limit')
+      const { data } = await supabase
+        .from('responsible_gaming_settings' as never)
+        .select('daily_deposit_limit, weekly_deposit_limit')
         .eq('user_id', profile!.id)
         .maybeSingle();
-      return (data as any) ?? { daily_deposit_limit: null, weekly_loss_limit: null };
+      return (data as any) ?? { daily_deposit_limit: null, weekly_deposit_limit: null };
     },
     enabled: !!profile?.id,
   });
@@ -40,7 +40,7 @@ export default function DepositLimitScreen() {
   // Prefill inputs from saved limits
   useEffect(() => {
     if (currentLimits?.daily_deposit_limit != null) setDailyDeposit(String(currentLimits.daily_deposit_limit));
-    if (currentLimits?.weekly_loss_limit != null) setWeeklyLoss(String(currentLimits.weekly_loss_limit));
+    if (currentLimits?.weekly_deposit_limit != null) setWeeklyLoss(String(currentLimits.weekly_deposit_limit));
   }, [currentLimits]);
 
   const saveMutation = useMutation({
@@ -93,8 +93,8 @@ export default function DepositLimitScreen() {
                 value={currentLimits.daily_deposit_limit ? `$${currentLimits.daily_deposit_limit}` : 'No limit'}
               />
               <LimitChip
-                label="Weekly Loss"
-                value={currentLimits.weekly_loss_limit ? `$${currentLimits.weekly_loss_limit}` : 'No limit'}
+                label="Weekly Deposit"
+                value={currentLimits.weekly_deposit_limit ? `$${currentLimits.weekly_deposit_limit}` : 'No limit'}
               />
             </View>
           </View>
@@ -121,9 +121,9 @@ export default function DepositLimitScreen() {
 
         {/* Weekly loss limit */}
         <View style={{ gap: 10 }}>
-          <Text style={{ fontFamily: FONT.sansBold, fontSize: 14, color: HG.ink }}>Weekly Loss Limit</Text>
+          <Text style={{ fontFamily: FONT.sansBold, fontSize: 14, color: HG.ink }}>Weekly Deposit Limit</Text>
           <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, lineHeight: 18 }}>
-            Maximum you can lose in a rolling 7-day window.
+            Maximum you can deposit per 7-day window.
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: HG.surface, borderRadius: 12, borderWidth: 1, borderColor: HG.hairline, paddingHorizontal: 16, height: 52 }}>
             <Text style={{ fontFamily: FONT.monoMedium, fontSize: 18, color: HG.muted, marginRight: 6 }}>$</Text>

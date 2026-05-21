@@ -30,7 +30,8 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { initSentry, captureError } from '@/lib/sentry';
 import { HG, FONT } from '@/lib/holygrail';
 
-SplashScreen.hideAsync().catch(() => {});
+// Prevent auto-hide so we can show the splash until fonts are ready.
+SplashScreen.preventAutoHideAsync().catch(() => {});
 initSentry();
 
 const queryClient = new QueryClient({
@@ -76,10 +77,17 @@ function RootLayoutNav() {
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="wallet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="wallet/deposit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="wallet/withdraw" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="player/[id]" options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="matchup/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="matchup/create" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="matchup/found/[id]" options={{ presentation: 'card', animation: 'fade' }} />
+      <Stack.Screen name="settings" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="settings/deposit-limit" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="settings/payout-methods" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="terms" options={{ presentation: 'card', animation: 'slide_from_right' }} />
+      <Stack.Screen name="privacy" options={{ presentation: 'card', animation: 'slide_from_right' }} />
     </Stack>
   );
 }

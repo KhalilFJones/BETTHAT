@@ -89,8 +89,13 @@ export function useAuth() {
       channelsRef.current.profile = undefined;
     }
 
+    // Use a unique suffix so Supabase never returns a stale already-subscribed
+    // channel object. Two calls with the same name (getSession + onAuthStateChange
+    // both firing on mount) would otherwise trigger the
+    // "cannot add postgres_changes after subscribe()" error.
+    const ts = Date.now();
     channelsRef.current.wallet = supabase
-      .channel(`wallet:${userId}`)
+      .channel(`wallet:${userId}:${ts}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` },
@@ -98,7 +103,7 @@ export function useAuth() {
       )
       .subscribe();
     channelsRef.current.profile = supabase
-      .channel(`profile:${userId}`)
+      .channel(`profile:${userId}:${ts}`)
       .on(
         'postgres_changes',
         { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },

@@ -29,7 +29,19 @@ export default function HomeScreen() {
     queryKey: ['home', profile?.id],
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
+
+      // Find the most recent game date ≤ today so we don't show empty state
+      // when data hasn't been refreshed for a day or two.
+      const { data: dateRow } = await supabase
+        .from('nba_games')
+        .select('game_date')
+        .lte('game_date', today)
+        .order('game_date', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const slateDate = (dateRow as any)?.game_date ?? today;
+      const prevDate = new Date(new Date(slateDate).getTime() - 24 * 3600 * 1000)
+        .toISOString().slice(0, 10);
 
       const [tickerQ, gamesQ, breakoutQ, trendingQ] = await Promise.all([
         supabase
@@ -44,7 +56,7 @@ export default function HomeScreen() {
         supabase
           .from('nba_games')
           .select('*')
-          .eq('game_date', today)
+          .eq('game_date', slateDate)
           .order('tip_off_time', { ascending: true }),
 
         supabase
@@ -54,7 +66,7 @@ export default function HomeScreen() {
             nba_players!inner(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation),
             nba_games!inner(game_date)
           `)
-          .eq('nba_games.game_date', yesterday)
+          .eq('nba_games.game_date', prevDate)
           .order('fantasy_points', { ascending: false })
           .limit(1)
           .maybeSingle(),

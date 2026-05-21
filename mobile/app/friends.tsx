@@ -30,13 +30,22 @@ export default function FriendsScreen() {
     queryKey: ['friends', profile?.id],
     queryFn: async () => {
       if (!profile?.id) return [];
-      const { data } = await supabase
-        .from('friends')
-        .select('*, friend:profiles!friends_recipient_id_fkey(id, username, display_name, rank_tier, total_wins, total_losses)')
-        .eq('requester_id', profile.id)
-        .eq('status', 'accepted')
-        .order('created_at', { ascending: false });
-      return data ?? [];
+      // Query both directions: friends I requested and friends who requested me.
+      const [sentRes, receivedRes] = await Promise.all([
+        supabase
+          .from('friends')
+          .select('*, friend:profiles!friends_recipient_id_fkey(id, username, display_name, rank_tier, total_wins, total_losses)')
+          .eq('requester_id', profile.id)
+          .eq('status', 'accepted')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('friends')
+          .select('*, friend:profiles!friends_requester_id_fkey(id, username, display_name, rank_tier, total_wins, total_losses)')
+          .eq('recipient_id', profile.id)
+          .eq('status', 'accepted')
+          .order('created_at', { ascending: false }),
+      ]);
+      return [...(sentRes.data ?? []), ...(receivedRes.data ?? [])];
     },
     enabled: !!profile?.id,
   });

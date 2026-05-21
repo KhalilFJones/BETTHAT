@@ -43,6 +43,8 @@ export default function PlayerDetailScreen() {
               .select('id, total_cap_used, lineup_players(player_id, slot_number, frozen_price)')
               .eq('user_id', profile.id)
               .eq('status', 'building')
+              .order('created_at', { ascending: false })
+              .limit(1)
               .maybeSingle()
           : Promise.resolve({ data: null, error: null }),
       ]);
@@ -97,11 +99,12 @@ export default function PlayerDetailScreen() {
     mutationFn: async () => {
       if (!data?.lineup?.id) return;
       const p: any = data.player;
-      await supabase
+      const { error } = await supabase
         .from('lineup_players')
         .delete()
         .eq('lineup_id', data.lineup.id)
         .eq('player_id', p.id);
+      if (error) throw error;
       await recomputeLineupCap(data.lineup.id);
     },
     onSuccess: () => {
@@ -171,7 +174,7 @@ export default function PlayerDetailScreen() {
         </View>
 
         {/* Price strip */}
-        <View style={{ paddingHorizontal: 18, marginBottom: 24, flexDirection: 'row', alignItems: 'baseline', gap: 12 }}>
+        <View style={{ paddingHorizontal: 18, marginBottom: 16, flexDirection: 'row', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
           <Text style={{ fontFamily: FONT.monoMedium, fontSize: 44, color: HG.ink, letterSpacing: -0.8 }}>
             {fmtPrice(pp?.current_price)}
           </Text>
@@ -179,6 +182,12 @@ export default function PlayerDetailScreen() {
             {fmtPct(pp?.price_change_pct_24h)} · 24h
           </Text>
         </View>
+
+        {/* SCRUM-128: Demand chip */}
+        <PlayerDemandChip demand={pp?.demand_count_1h ?? 0} />
+
+        {/* Last-5 FPTS breakdown (SCRUM-128) */}
+        <Last5Breakdown player={p} />
 
         {/* OVERALL + 5 stat dials */}
         <DialGrid player={p} />
@@ -342,3 +351,66 @@ function DataTile({ label, value, mono = true }: { label: string; value: string;
     </View>
   );
 }
+
+// SCRUM-128: Demand chip on player detail
+function PlayerDemandChip({ demand }: { demand: number }) {
+  if (demand < 5) return null;
+  const high = demand >= 15;
+  return (
+    <View style={{ paddingHorizontal: 18, marginBottom: 16 }}>
+      <View style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: high ? HG.skySoft : HG.surface, borderWidth: 1, borderColor: high ? HG.sky : HG.hairline2 }}>
+        <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: high ? HG.sky : HG.muted, letterSpacing: 0.8 }}>
+          {high ? '🔥 HIGH DEMAND' : '⚡ MED DEMAND'}
+        </Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted2, letterSpacing: 0.4 }}>
+          {demand} adds / 1h
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// SCRUM-128: Last-5 games breakdown table
+function Last5Breakdown({ player }: { player: any }) {
+  // Attempt to use last5_game_logs if available, else fall back to season stats
+  const logs: any[] = Array.isArray(player.last5_game_logs) ? player.last5_game_logs.slice(0, 5) : [];
+  if (logs.length === 0) return null;
+
+  const fpts = (g: any) => {
+    const pts = Number(g.pts ?? 0);
+    const reb = Number(g.reb ?? 0);
+    const ast = Number(g.ast ?? 0);
+    const stl = Number(g.stl ?? 0);
+    const blk = Number(g.blk ?? 0);
+    const to = Number(g.to ?? g.tov ?? 0);
+    return pts + reb * 1.2 + ast * 1.5 + stl * 3 + blk * 3 - to;
+  };
+
+  return (
+    <View style={{ paddingHorizontal: 18, marginBottom: 24 }}>
+      <Text style={{ fontFamily: FONT.serif, fontSize: 18, color: HG.ink, marginBottom: 12 }}>
+        <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>Last</Text> 5 games
+      </Text>
+      <View style={{ backgroundColor: HG.surface, borderRadius: 12, borderWidth: 1, borderColor: HG.hairline, overflow: 'hidden' }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 8, borderBottomWidth: 1, borderColor: HG.hairline, backgroundColor: HG.inputBg }}>
+          {['OPP', 'PTS', 'REB', 'AST', 'FPTS'].map((h) => (
+            <Text key={h} style={{ flex: 1, fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1, textAlign: h === 'OPP' ? 'left' : 'right' }}>
+              {h}
+            </Text>
+          ))}
+        </View>
+        {logs.map((g: any, i: number) => (
+          <View key={i} style={{ flexDirection: 'row', paddingHorizontal: 14, paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderColor: HG.hairline }}>
+            <Text style={{ flex: 1, fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 0.4 }}>{g.opponent ?? '—'}</Text>
+            <Text style={{ flex: 1, fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink, textAlign: 'right' }}>{g.pts ?? 0}</Text>
+            <Text style={{ flex: 1, fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink, textAlign: 'right' }}>{g.reb ?? 0}</Text>
+            <Text style={{ flex: 1, fontFamily: FONT.monoMedium, fontSize: 11, color: HG.ink, textAlign: 'right' }}>{g.ast ?? 0}</Text>
+            <Text style={{ flex: 1, fontFamily: FONT.monoBold, fontSize: 11, color: HG.sky, textAlign: 'right' }}>{fpts(g).toFixed(1)}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+

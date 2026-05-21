@@ -12,6 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import Svg, { Path } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
+import { acceptSidebet } from '@/services/sidebet';
 import { useAuthStore } from '@/stores/auth.store';
 import { HG, FONT, fmtPrice, playerInitials, playerLastName } from '@/lib/holygrail';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
@@ -50,17 +51,8 @@ export default function SidebetDetailScreen() {
     mutationFn: async () => {
       if (!profile?.id || !sb) throw new Error('Not ready');
       if (Number(wallet?.balance ?? 0) < Number(sb.wager_amount)) throw new Error('Insufficient buying power');
-      const { error } = await supabase
-        .from('sidebets')
-        .update({
-          opponent_id: profile.id,
-          is_open: false,
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
-        })
-        .eq('id', sb.id)
-        .eq('status', 'open'); // optimistic lock — fail if someone else grabbed it
-      if (error) throw error;
+      // Use the accept_sidebet RPC which handles wallet escrow atomically.
+      await acceptSidebet(sb.id);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['sidebet-detail', id] });
@@ -161,6 +153,11 @@ export default function SidebetDetailScreen() {
                 ? `Buying power ${fmtPrice(wallet?.balance)} · winner takes ${fmtPrice(Number(sb.wager_amount) * 1.9)}`
                 : `Insufficient buying power · need ${fmtPrice(sb.wager_amount)}`}
             </Text>
+            {acceptMutation.isError ? (
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.down, letterSpacing: 0.4, textAlign: 'center', marginTop: 10, paddingHorizontal: 12 }}>
+                {(acceptMutation.error as Error)?.message ?? 'Failed to accept. Try again.'}
+              </Text>
+            ) : null}
           </View>
         </ScrollView>
 
