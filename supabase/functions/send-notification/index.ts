@@ -18,6 +18,9 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
 );
 const SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+// Internal webhook secret used by DB triggers (pg_net) to call this function.
+// Must match `app.notification_webhook_secret` in the database config.
+const WEBHOOK_SECRET = Deno.env.get('NOTIFY_WEBHOOK_SECRET') ?? 'btht-notify-db-2026-internal';
 
 interface NotifPayload {
   user_id: string;
@@ -31,6 +34,8 @@ interface NotifPayload {
 // Map notification `type` → notification_preferences column.
 const PREF_COLUMN: Record<string, string> = {
   matchup_found:          'push_matchup_found',
+  matchup_chat:           'push_chat_message',
+  matchup_score:          'push_matchup_score',
   game_starting:          'push_game_starting',
   game_final:             'push_game_final',
   sidebet_received:       'push_sidebet_received',
@@ -45,10 +50,11 @@ const PREF_COLUMN: Record<string, string> = {
 };
 
 Deno.serve(async (req) => {
-  // H-2: service-role only.
+  // Accept service_role key OR the internal DB webhook secret.
   const auth = req.headers.get('Authorization') ?? '';
-  if (auth !== `Bearer ${SERVICE_KEY}`) {
-    return resp(401, { error: 'service role required' });
+  const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  if (token !== SERVICE_KEY && token !== WEBHOOK_SECRET) {
+    return resp(401, { error: 'unauthorized' });
   }
 
   const payload = (await req.json()) as NotifPayload;

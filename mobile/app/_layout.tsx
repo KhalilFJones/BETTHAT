@@ -8,6 +8,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { View, Text } from 'react-native';
 import {
+  registerForPushNotificationsAsync,
+  savePushToken,
+  deactivatePushToken,
+  useNotificationRouting,
+} from '@/lib/notifications';
+import {
   useFonts,
   DMSans_300Light,
   DMSans_400Regular,
@@ -55,6 +61,21 @@ function RootLayoutNav() {
   const { session, profile, isInitialized } = useAuth();
   const segments = useSegments();
   const router = useRouter();
+
+  // Set up notification tap → navigation routing.
+  useNotificationRouting();
+
+  // Register / deactivate push token on auth state change.
+  useEffect(() => {
+    if (!isInitialized) return;
+    if (session && profile?.id) {
+      registerForPushNotificationsAsync().then((token) => {
+        if (token) savePushToken(profile.id, token);
+      });
+    } else if (!session && profile?.id) {
+      deactivatePushToken(profile.id);
+    }
+  }, [session, profile?.id, isInitialized]);
 
   useEffect(() => {
     if (!isInitialized) return;
