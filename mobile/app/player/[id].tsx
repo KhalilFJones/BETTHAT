@@ -164,9 +164,6 @@ export default function PlayerDetailScreen() {
             {p.full_name}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 12, marginTop: 10 }}>
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 13, color: HG.sky, letterSpacing: 0.6 }}>
-              {p.ticker_handle}
-            </Text>
             <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 0.8, textTransform: 'uppercase' }}>
               {p.team_abbreviation} · {p.position} · #{p.jersey_number}
             </Text>

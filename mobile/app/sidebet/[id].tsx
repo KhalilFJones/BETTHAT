@@ -125,7 +125,7 @@ export default function SidebetDetailScreen() {
                     {sb.nba_players.full_name}
                   </Text>
                   <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
-                    {sb.nba_players.ticker_handle}
+                    {sb.nba_players.team_abbreviation} · {sb.nba_players.position}
                   </Text>
                 </View>
                 <View style={{ alignItems: 'flex-end' }}>

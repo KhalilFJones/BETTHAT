@@ -254,7 +254,7 @@ export default function PlaceOrderScreen() {
                       {lp.nba_players.full_name}
                     </Text>
                     <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 0.4, marginTop: 2 }}>
-                      {lp.nba_players.ticker_handle ?? ''}
+                      {lp.nba_players.team_abbreviation} · {lp.nba_players.position}
                     </Text>
                   </View>
                   <Text style={{ fontFamily: FONT.monoMedium, fontSize: 15, color: HG.ink }}>

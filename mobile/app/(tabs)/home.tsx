@@ -59,7 +59,7 @@ export default function HomeScreen() {
       const [tickerQ, gamesQ, breakoutQ] = await Promise.all([
         supabase
           .from('player_prices')
-          .select(`current_price, price_change_pct_24h, nba_players!inner(ticker_handle, last_name)`)
+          .select(`current_price, price_change_pct_24h, nba_players!inner(first_name, last_name, full_name)`)
           .order('demand_count_1h', { ascending: false })
           .limit(20),
         supabase
@@ -248,9 +248,9 @@ export default function HomeScreen() {
 
   const tickerEntries = useMemo<TickerEntry[]>(
     () => (data?.ticker ?? [])
-      .filter((t: any) => t.nba_players?.ticker_handle && t.price_change_pct_24h != null)
+      .filter((t: any) => t.nba_players?.full_name && t.price_change_pct_24h != null)
       .map((t: any) => ({
-        ticker: t.nba_players.ticker_handle,
+        ticker: t.nba_players.full_name,
         price: Number(t.current_price),
         pctChange: Number(t.price_change_pct_24h ?? 0),
       })),

@@ -411,7 +411,7 @@ function LineupRow({ index, accent, lp }: { index: number; accent: string; lp: a
           {playerLastName(p)}
         </Text>
         <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 0.4, marginTop: 1 }}>
-          {p.ticker_handle ?? p.team_abbreviation}
+          {p.team_abbreviation} · {p.position}
         </Text>
       </View>
       <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.ink }}>

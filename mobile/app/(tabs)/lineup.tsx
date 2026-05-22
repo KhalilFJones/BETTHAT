@@ -144,7 +144,7 @@ export default function PlayerMarketScreen() {
     return data.tonight
       .filter((p) => p.player_prices?.price_change_pct_24h != null)
       .map((p) => ({
-        ticker: p.ticker_handle || playerLastName(p).toUpperCase(),
+        ticker: p.full_name || `${p.first_name} ${p.last_name}`,
         price: Number(p.player_prices!.current_price),
         pctChange: Number(p.player_prices!.price_change_pct_24h ?? 0),
       }))
