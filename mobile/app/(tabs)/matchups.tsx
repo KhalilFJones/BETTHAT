@@ -4,10 +4,10 @@
 // Tap → Live Game Board (Screen 07) for live, Game Result (Screen 08) for completed.
 // =============================================================================
 
-import { View, Text, FlatList, Pressable, ActivityIndicator, RefreshControl } from 'react-native';
+import { View, Text, FlatList, Pressable, ActivityIndicator, RefreshControl, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
@@ -18,6 +18,7 @@ import { SectionHead } from '@/components/holygrail/SectionHead';
 export default function MatchupsScreen() {
   const router = useRouter();
   const { profile, wallet } = useAuthStore();
+  const qc = useQueryClient();
 
   const { data: matchups, isLoading, isRefetching, refetch } = useQuery({
     queryKey: ['matchups-list', profile?.id],
@@ -30,6 +31,7 @@ export default function MatchupsScreen() {
             id, status, settled_wager, pot_amount, payout_amount,
             user1_id, user2_id, user1_score, user2_score, score_margin,
             winner_user_id, game_date, started_at, completed_at, created_at,
+            lineup1_id,
             u1:profiles!user1_id(id, username, display_name),
             u2:profiles!user2_id(id, username, display_name)
           `)
@@ -43,14 +45,41 @@ export default function MatchupsScreen() {
           .gte('expires_at', new Date().toISOString()),
       ]);
       if (matchupsResult.error) throw matchupsResult.error;
+      // lineup1_id now selected — filter out queue entries that already have a matchup row
       const matchupLineupIds = new Set((matchupsResult.data ?? []).map((m: any) => m.lineup1_id).filter(Boolean));
-      // Only show queue entries that don't already have a matchup row
       const unmatched = (queueResult.data ?? []).filter((q: any) => !matchupLineupIds.has(q.lineup_id));
       return { matchups: matchupsResult.data ?? [], unmatched };
     },
     enabled: !!profile?.id,
-    refetchInterval: 30_000,
+    refetchInterval: 10_000,
   });
+
+  // Shared cancel: delete queue entry + pending matchup + reset lineup to building
+  const cancelMutation = useMutation({
+    mutationFn: async ({ lineupId, matchupId }: { lineupId: string; matchupId?: string }) => {
+      await supabase.from('matchmaking_queue').delete().eq('lineup_id', lineupId);
+      if (matchupId) {
+        await supabase.from('matchups').delete().eq('id', matchupId).eq('status', 'pending');
+      } else {
+        // Try to find by lineup1_id as fallback
+        await supabase.from('matchups').delete().eq('lineup1_id', lineupId).eq('status', 'pending');
+      }
+      await supabase.from('lineups').update({ status: 'building', submitted_at: null, locked_at: null, max_wager: null }).eq('id', lineupId);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['matchups-list'] });
+    },
+    onError: (err: any) => {
+      Alert.alert('Cancel failed', err?.message ?? 'Please try again.');
+    },
+  });
+
+  function confirmCancel(lineupId: string, matchupId?: string) {
+    Alert.alert('Cancel Order', 'Remove this order from the queue?', [
+      { text: 'Keep It', style: 'cancel' },
+      { text: 'Cancel Order', style: 'destructive', onPress: () => cancelMutation.mutate({ lineupId, matchupId }) },
+    ]);
+  }
 
   const allMatchups = matchups?.matchups ?? [];
   const unmatched = matchups?.unmatched ?? [];
@@ -109,6 +138,7 @@ export default function MatchupsScreen() {
           }
           if (item.kind === 'queue') {
             const q = (item as any).q;
+            const isCancelling = cancelMutation.isPending && (cancelMutation.variables as any)?.lineupId === q.lineup_id;
             return (
               <View style={{ marginHorizontal: 18, marginVertical: 4, padding: 16, backgroundColor: HG.surface, borderRadius: 14, borderWidth: 1, borderColor: HG.hairline, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: HG.sky }} />
@@ -118,7 +148,17 @@ export default function MatchupsScreen() {
                     Wager: ${Number(q.max_wager).toFixed(2)} · {q.game_date}
                   </Text>
                 </View>
-                <ActivityIndicator size="small" color={HG.sky} />
+                {isCancelling ? (
+                  <ActivityIndicator size="small" color={HG.muted} />
+                ) : (
+                  <Pressable
+                    onPress={() => confirmCancel(q.lineup_id)}
+                    style={{ padding: 8 }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: '#FF3B30', letterSpacing: 0.8 }}>✕</Text>
+                  </Pressable>
+                )}
               </View>
             );
           }
@@ -128,6 +168,8 @@ export default function MatchupsScreen() {
               matchup={r.m}
               meId={profile?.id ?? ''}
               onPress={() => router.push(`/matchup/${r.m.id}` as any)}
+              onCancel={r.m.status === 'pending' ? () => confirmCancel(r.m.lineup1_id, r.m.id) : undefined}
+              isCancelling={cancelMutation.isPending && (cancelMutation.variables as any)?.matchupId === r.m.id}
             />
           );
         }}
@@ -136,7 +178,13 @@ export default function MatchupsScreen() {
   );
 }
 
-function MatchupRow({ matchup, meId, onPress }: { matchup: any; meId: string; onPress: () => void }) {
+function MatchupRow({ matchup, meId, onPress, onCancel, isCancelling }: {
+  matchup: any;
+  meId: string;
+  onPress: () => void;
+  onCancel?: () => void;
+  isCancelling?: boolean;
+}) {
   const meIs1 = matchup.user1_id === meId;
   const opponent = meIs1 ? matchup.u2 : matchup.u1;
   const myScore = meIs1 ? matchup.user1_score : matchup.user2_score;
@@ -193,6 +241,23 @@ function MatchupRow({ matchup, meId, onPress }: { matchup: any; meId: string; on
         <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.sky, marginTop: 8, letterSpacing: 0.4 }}>
           + {fmtPrice(matchup.payout_amount)} payout
         </Text>
+      ) : null}
+
+      {status === 'pending' && onCancel ? (
+        <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: HG.hairline, paddingTop: 10 }}>
+          {isCancelling ? (
+            <ActivityIndicator size="small" color={HG.muted} />
+          ) : (
+            <Pressable
+              onPress={(e) => { e.stopPropagation?.(); onCancel(); }}
+              hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+            >
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: '#FF3B30', letterSpacing: 0.8, textTransform: 'uppercase' }}>
+                Cancel Order
+              </Text>
+            </Pressable>
+          )}
+        </View>
       ) : null}
     </Pressable>
   );

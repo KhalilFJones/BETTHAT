@@ -63,7 +63,9 @@ export default function PlaceOrderScreen() {
 
   const [wager, setWager] = useState<string>('');
   const [submitted, setSubmitted] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
   const [matchupId, setMatchupId] = useState<string | undefined>();
+  const [lineupId, setLineupId] = useState<string | undefined>();
   const [queueSec, setQueueSec] = useState(0);
 
   const wagerNum = Number(wager);
@@ -514,16 +516,23 @@ function PendingOrderState({
   const qc = useQueryClient();
   const [testMatching, setTestMatching] = useState(false);
 
-  // TEST MODE: after 10 seconds simulate a match being found by updating
-  // the pending matchup to 'matched' so the full lifecycle can be tested.
+  // TEST MODE: after 10 seconds simulate a match being found.
+  // Guard: only fires if the matchup is still 'pending' (not already matched).
   useEffect(() => {
     if (!matchupId || !profile?.id) return;
     const timer = setTimeout(async () => {
+      // Verify matchup is still pending before auto-matching
+      const { data: current } = await supabase
+        .from('matchups')
+        .select('status')
+        .eq('id', matchupId)
+        .single();
+      if (current?.status !== 'pending') return;
+
       setTestMatching(true);
       const rake = Number((wager * 2 * 0.035).toFixed(2));
       await supabase.from('matchups').update({
         status: 'matched',
-        // user2 = same user for test purposes so we can see both sides
         user2_id: profile.id,
         lineup2_id: lineup.id,
         user2_max_wager: wager,
@@ -538,6 +547,36 @@ function PendingOrderState({
     }, 10_000);
     return () => clearTimeout(timer);
   }, [matchupId, profile?.id]);
+
+  // Cancel order: remove from queue + delete pending matchup + reset lineup to building
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!lineup?.id) return;
+      // Delete queue entry
+      await supabase
+        .from('matchmaking_queue')
+        .delete()
+        .eq('lineup_id', lineup.id);
+      // Delete pending matchup row (if one was created)
+      if (matchupId) {
+        await supabase
+          .from('matchups')
+          .delete()
+          .eq('id', matchupId)
+          .eq('status', 'pending');
+      }
+      // Reset lineup to building so user can edit / resubmit
+      await supabase
+        .from('lineups')
+        .update({ status: 'building', submitted_at: null, locked_at: null, max_wager: null })
+        .eq('id', lineup.id);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['matchups-list'] });
+      qc.invalidateQueries({ queryKey: ['place-order-lineup'] });
+      onCancel();
+    },
+  });
 
   // Poll for matched status
   const { data: matchedDemo } = useQuery({
@@ -633,9 +672,13 @@ function PendingOrderState({
           </Pressable>
         ) : null}
 
-        <Pressable onPress={onCancel} style={{ marginTop: matchedDemo?.id ? 12 : 24, padding: 12 }}>
+        <Pressable
+          onPress={() => cancelMutation.mutate()}
+          disabled={cancelMutation.isPending}
+          style={{ marginTop: matchedDemo?.id ? 12 : 24, padding: 12, opacity: cancelMutation.isPending ? 0.5 : 1 }}
+        >
           <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-            Cancel order
+            {cancelMutation.isPending ? 'Cancelling…' : 'Cancel order'}
           </Text>
         </Pressable>
 
