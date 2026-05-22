@@ -92,6 +92,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     .from('player_game_availability')
     .select(`
       is_draftable,
+      nba_games!inner(status),
       nba_players!inner(
         id, full_name, first_name, last_name, position, jersey_number,
         team_abbreviation, ticker_handle, salary_tier, is_injured, injury_note,
@@ -100,7 +101,8 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
       )
     `)
     .eq('game_date', slateDate)
-    .eq('is_draftable', true);
+    .eq('is_draftable', true)
+    .not('nba_games.status', 'in', '("final","postponed","cancelled")');
 
   const tonightPlayerIds = ((tonightQ.data ?? []) as any[])
     .map((row) => row.nba_players?.id)
@@ -175,10 +177,15 @@ export function usePlayerMarket(userId: string | undefined, slateDate?: string) 
   });
 }
 
-// ── Upcoming slates — which days have NBA games this week ───────────────────
+// ── Upcoming slates — TODAY and UP NEXT only ────────────────────────────────
+// Returns at most two tabs:
+//   [0] = today's date (games happening today — live / scheduled)
+//   [1] = the immediate next game date after today
+// Players from dates further out are never shown.
 
 export interface SlateDay {
   game_date: string;  // YYYY-MM-DD
+  label: 'Today' | 'Up Next';
   has_live: boolean;
   game_count: number;
 }
@@ -188,31 +195,61 @@ export function useUpcomingSlates() {
     queryKey: ['upcoming-slates'],
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
-      const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
       const nextWeek = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const { data } = await supabase
         .from('nba_games')
         .select('game_date, status')
-        .gte('game_date', yesterday)
+        .gte('game_date', today)
         .lte('game_date', nextWeek)
         .not('status', 'in', '("postponed","cancelled")')
         .order('game_date', { ascending: true });
 
-      // Group by date, collecting live flag and game count
-      const dateMap = new Map<string, { has_live: boolean; game_count: number }>();
+      // Collect dates with game counts (exclude all-final dates from "active" set)
+      const dateMap = new Map<string, { has_live: boolean; game_count: number; all_final: boolean }>();
       for (const g of (data ?? []) as Array<{ game_date: string; status: string }>) {
-        const date = String(g.game_date);
-        const existing = dateMap.get(date) ?? { has_live: false, game_count: 0 };
-        dateMap.set(date, {
+        const d = String(g.game_date);
+        const existing = dateMap.get(d) ?? { has_live: false, game_count: 0, all_final: true };
+        const isFinal = g.status === 'final';
+        dateMap.set(d, {
           has_live: existing.has_live || g.status === 'live' || g.status === 'halftime',
           game_count: existing.game_count + 1,
+          all_final: existing.all_final && isFinal,
         });
       }
-      // Always ensure today appears even if no games yet in DB
-      if (!dateMap.has(today)) dateMap.set(today, { has_live: false, game_count: 0 });
-      return Array.from(dateMap.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([game_date, info]) => ({ game_date, ...info })) as SlateDay[];
+
+      // Always include today
+      if (!dateMap.has(today)) dateMap.set(today, { has_live: false, game_count: 0, all_final: true });
+
+      const sortedDates = Array.from(dateMap.keys()).sort();
+
+      // Today slot
+      const todayInfo = dateMap.get(today)!;
+      const todaySlate: SlateDay = {
+        game_date: today,
+        label: 'Today',
+        has_live: todayInfo.has_live,
+        game_count: todayInfo.game_count,
+      };
+
+      // Up Next = first date after today that has at least one non-final game
+      const upNextDate = sortedDates.find((d) => {
+        if (d <= today) return false;
+        const info = dateMap.get(d)!;
+        return !info.all_final && info.game_count > 0;
+      });
+
+      const slates: SlateDay[] = [todaySlate];
+      if (upNextDate) {
+        const info = dateMap.get(upNextDate)!;
+        slates.push({
+          game_date: upNextDate,
+          label: 'Up Next',
+          has_live: info.has_live,
+          game_count: info.game_count,
+        });
+      }
+
+      return slates;
     },
     staleTime: 60_000,
     refetchInterval: 120_000,

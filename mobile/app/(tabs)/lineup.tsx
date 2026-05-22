@@ -31,7 +31,6 @@ import {
   type PlayerMarketRow,
   type TrendingRow,
   type InProgressLineup,
-  type SlateDay,
 } from '@/hooks/holygrail/usePlayerMarket';
 import { recomputeLineupCap } from '@/hooks/holygrail/lineupOps';
 
@@ -71,19 +70,25 @@ export default function PlayerMarketScreen() {
   const userId = profile?.id;
 
   const today = new Date().toISOString().slice(0, 10);
-  const [selectedSlate, setSelectedSlate] = useState<string>(today);
+  // 'today' or 'upnext'
+  const [activeTab, setActiveTab] = useState<'today' | 'upnext'>('today');
 
   const { data: slates } = useUpcomingSlates();
+
+  // Derive selected slate date from the active tab
+  const todaySlate = slates?.find((s) => s.label === 'Today');
+  const upNextSlate = slates?.find((s) => s.label === 'Up Next');
+  const selectedSlate = activeTab === 'upnext' && upNextSlate
+    ? upNextSlate.game_date
+    : today;
+
   const { data, isLoading, isRefetching, refetch } = usePlayerMarket(userId, selectedSlate);
 
-  // Auto-select the first slate that actually has games if today is empty.
+  // Auto-switch to Up Next if today has no playable players
   useEffect(() => {
     if (!slates || slates.length === 0) return;
-    if ((data?.tonight ?? []).length === 0) {
-      const first = slates.find((s) => s.game_count > 0);
-      if (first && first.game_date !== selectedSlate) {
-        setSelectedSlate(first.game_date);
-      }
+    if ((data?.tonight ?? []).length === 0 && activeTab === 'today' && upNextSlate) {
+      setActiveTab('upnext');
     }
   }, [slates, data?.tonight]);
 
@@ -228,24 +233,73 @@ export default function PlayerMarketScreen() {
         }
         ListHeaderComponent={
           <View>
-            {/* Slate picker — Today / upcoming game days this week */}
-            {slates && slates.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 4, gap: 8 }}
+            {/* Today / Up Next tab toggle */}
+            <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 4 }}>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  backgroundColor: HG.surface,
+                  borderRadius: 14,
+                  borderWidth: 1,
+                  borderColor: HG.hairline,
+                  overflow: 'hidden',
+                }}
               >
-                {slates.map((s) => (
-                  <SlatePill
-                    key={s.game_date}
-                    slate={s}
-                    today={today}
-                    active={selectedSlate === s.game_date}
-                    onPress={() => setSelectedSlate(s.game_date)}
-                  />
-                ))}
-              </ScrollView>
-            )}
+                {/* Today tab */}
+                <Pressable
+                  onPress={() => setActiveTab('today')}
+                  style={{
+                    flex: 1,
+                    paddingVertical: 10,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: activeTab === 'today' ? HG.sky : 'transparent',
+                    borderRadius: 12,
+                  }}
+                >
+                  <Text style={{
+                    fontFamily: activeTab === 'today' ? FONT.monoBold : FONT.monoMedium,
+                    fontSize: 12,
+                    letterSpacing: 0.7,
+                    color: activeTab === 'today' ? HG.jet : HG.muted,
+                  }}>
+                    {todaySlate?.has_live ? '🔴 LIVE' : 'Today'}
+                  </Text>
+                  {todaySlate && todaySlate.game_count > 0 && (
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: activeTab === 'today' ? HG.jet + 'cc' : HG.muted + '88', marginTop: 1 }}>
+                      {todaySlate.game_count} game{todaySlate.game_count !== 1 ? 's' : ''}
+                    </Text>
+                  )}
+                </Pressable>
+
+                {/* Up Next tab */}
+                {upNextSlate ? (
+                  <Pressable
+                    onPress={() => setActiveTab('upnext')}
+                    style={{
+                      flex: 1,
+                      paddingVertical: 10,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: activeTab === 'upnext' ? HG.sky : 'transparent',
+                      borderRadius: 12,
+                    }}
+                  >
+                    <Text style={{
+                      fontFamily: activeTab === 'upnext' ? FONT.monoBold : FONT.monoMedium,
+                      fontSize: 12,
+                      letterSpacing: 0.7,
+                      color: activeTab === 'upnext' ? HG.jet : HG.muted,
+                    }}>
+                      Up Next
+                    </Text>
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: activeTab === 'upnext' ? HG.jet + 'cc' : HG.muted + '88', marginTop: 1 }}>
+                      {upNextSlateLabel(upNextSlate.game_date)} · {upNextSlate.game_count}G
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
 
             {/* Search */}
             <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 8 }}>
@@ -502,7 +556,7 @@ export default function PlayerMarketScreen() {
             {/* Trending carousel */}
             {data?.trending && data.trending.length > 0 && position === 'ALL' && !search ? (
               <>
-                <SectionHead word="" emphasis="Trending" emphasisFirst label={slateLabel(selectedSlate, today)} />
+                <SectionHead word="" emphasis="Trending" emphasisFirst label={activeTab === 'today' ? 'Tonight' : 'Up Next'} />
                 <ScrollView
                   horizontal
                   showsHorizontalScrollIndicator={false}
@@ -515,7 +569,7 @@ export default function PlayerMarketScreen() {
               </>
             ) : null}
 
-            <SectionHead word="Playing" emphasis={slateLabel(selectedSlate, today)} label={`${players.length} players`} />
+            <SectionHead word="Playing" emphasis={activeTab === 'today' ? 'Tonight' : 'Up Next'} label={`${players.length} players`} />
           </View>
         }
         renderItem={({ item }) => (
@@ -561,6 +615,12 @@ export default function PlayerMarketScreen() {
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+/** Returns a short date label for the Up Next tab sub-label, e.g. "Fri May 22" */
+function upNextSlateLabel(date: string): string {
+  const d = new Date(date + 'T12:00:00Z');
+  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
 
 /** Returns a human-readable label for the selected slate date. */
 function slateLabel(date: string, today: string): string {
@@ -627,61 +687,6 @@ function TrendCard({ row, onPress }: { row: TrendingRow; onPress: () => void }) 
           {fmtPct(row.price_change_pct_24h)}
         </Text>
       </View>
-    </Pressable>
-  );
-}
-
-// =============================================================================
-// SLATE PILL
-// =============================================================================
-
-function SlatePill({
-  slate, today, active, onPress,
-}: {
-  slate: SlateDay;
-  today: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  const label = slateLabel(slate.game_date, today);
-  const showLive = slate.has_live;
-
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 5,
-        height: 36,
-        paddingHorizontal: 14,
-        borderRadius: 999,
-        backgroundColor: active ? HG.sky : HG.surface,
-        borderWidth: 1,
-        borderColor: active ? HG.sky : HG.hairline,
-      }}
-    >
-      {showLive && (
-        <View
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 4,
-            backgroundColor: active ? HG.jet : HG.up,
-          }}
-        />
-      )}
-      <Text
-        style={{
-          fontFamily: active ? FONT.monoBold : FONT.monoMedium,
-          fontSize: 11,
-          letterSpacing: 0.7,
-          color: active ? HG.jet : HG.muted,
-        }}
-      >
-        {label}
-        {slate.game_count > 0 ? ` · ${slate.game_count}G` : ''}
-      </Text>
     </Pressable>
   );
 }
