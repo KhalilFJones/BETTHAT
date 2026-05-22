@@ -514,36 +514,23 @@ function PendingOrderState({
   const router = useRouter();
   const { profile } = useAuthStore();
   const qc = useQueryClient();
-  const [testMatching, setTestMatching] = useState(false);
+  const [testMatching, _setTestMatching] = useState(false); // kept for status pill UI
 
   // TEST MODE: after 10 seconds simulate a match being found.
+  // Uses a SECURITY DEFINER RPC to bypass RLS (no UPDATE policy on matchups for users).
   // Guard: only fires if the matchup is still 'pending' (not already matched).
   useEffect(() => {
     if (!matchupId || !profile?.id) return;
     const timer = setTimeout(async () => {
-      // Verify matchup is still pending before auto-matching
-      const { data: current } = await supabase
-        .from('matchups')
-        .select('status')
-        .eq('id', matchupId)
-        .single();
-      if (current?.status !== 'pending') return;
-
-      setTestMatching(true);
-      const rake = Number((wager * 2 * 0.035).toFixed(2));
-      await supabase.from('matchups').update({
-        status: 'matched',
-        user2_id: profile.id,
-        lineup2_id: lineup.id,
-        user2_max_wager: wager,
-        settled_wager: wager,
-        pot_amount: Number((wager * 2).toFixed(2)),
-        rake_amount: rake,
-        payout_amount: Number((wager * 2 - rake).toFixed(2)),
-        matched_at: new Date().toISOString(),
-      }).eq('id', matchupId);
+      // Call the SECURITY DEFINER function — it checks status='pending' server-side
+      await (supabase as any).rpc('test_auto_match', {
+        p_matchup_id: matchupId,
+        p_user_id: profile.id,
+        p_lineup_id: lineup.id,
+        p_wager: wager,
+      });
       qc.invalidateQueries({ queryKey: ['matchups-list'] });
-      setTestMatching(false);
+      qc.invalidateQueries({ queryKey: ['matched-demo', matchupId] });
     }, 10_000);
     return () => clearTimeout(timer);
   }, [matchupId, profile?.id]);
