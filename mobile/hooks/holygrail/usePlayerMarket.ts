@@ -188,11 +188,12 @@ export function useUpcomingSlates() {
     queryKey: ['upcoming-slates'],
     queryFn: async () => {
       const today = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 24 * 3600 * 1000).toISOString().slice(0, 10);
       const nextWeek = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
       const { data } = await supabase
         .from('nba_games')
         .select('game_date, status')
-        .gte('game_date', today)
+        .gte('game_date', yesterday)
         .lte('game_date', nextWeek)
         .not('status', 'in', '("postponed","cancelled")')
         .order('game_date', { ascending: true });

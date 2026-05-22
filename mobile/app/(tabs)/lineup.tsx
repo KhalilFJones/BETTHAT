@@ -4,7 +4,7 @@
 // build a lineup of 3 within the $500 cap.
 // =============================================================================
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator, RefreshControl,
 } from 'react-native';
@@ -75,6 +75,17 @@ export default function PlayerMarketScreen() {
 
   const { data: slates } = useUpcomingSlates();
   const { data, isLoading, isRefetching, refetch } = usePlayerMarket(userId, selectedSlate);
+
+  // Auto-select the first slate that actually has games if today is empty.
+  useEffect(() => {
+    if (!slates || slates.length === 0) return;
+    if ((data?.tonight ?? []).length === 0) {
+      const first = slates.find((s) => s.game_count > 0);
+      if (first && first.game_date !== selectedSlate) {
+        setSelectedSlate(first.game_date);
+      }
+    }
+  }, [slates, data?.tonight]);
 
   // Live stats — polls every 1 second when games are live
   const tonightIds = useMemo(() => (data?.tonight ?? []).map((p) => p.id), [data?.tonight]);

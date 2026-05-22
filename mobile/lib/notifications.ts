@@ -10,6 +10,12 @@ import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
 
+// Expo Go (store client) does not support remote push notifications in SDK 53+.
+// Detect it and skip push registration silently.
+const isExpoGo =
+  Constants.appOwnership === 'expo' ||
+  (Constants.executionEnvironment as string) === 'storeClient';
+
 import { supabase } from './supabase';
 
 // Show alerts + play sound + set badge when app is in foreground.
@@ -53,6 +59,9 @@ export async function setupAndroidChannels() {
 // Permission + token registration
 // ---------------------------------------------------------------------------
 export async function registerForPushNotificationsAsync(): Promise<string | null> {
+  // Push tokens are not supported in Expo Go — silently skip.
+  if (isExpoGo) return null;
+
   await setupAndroidChannels();
 
   const { status: existing } = await Notifications.getPermissionsAsync();
