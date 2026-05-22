@@ -578,22 +578,20 @@ function PendingOrderState({
     },
   });
 
-  // Poll for matched status
+  // Poll for matched status — scoped to this specific matchupId so old matches don't trigger it
   const { data: matchedDemo } = useQuery({
-    queryKey: ['matched-demo', profile?.id],
+    queryKey: ['matched-demo', matchupId],
     queryFn: async () => {
-      if (!profile?.id) return null;
+      if (!matchupId) return null;
       const { data } = await supabase
         .from('matchups')
         .select('id, status, matched_at')
-        .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+        .eq('id', matchupId)
         .eq('status', 'matched')
-        .order('matched_at', { ascending: false })
-        .limit(1)
         .maybeSingle();
       return data;
     },
-    enabled: !!profile?.id,
+    enabled: !!matchupId,
     refetchInterval: 3000,
   });
 
@@ -672,15 +670,17 @@ function PendingOrderState({
           </Pressable>
         ) : null}
 
-        <Pressable
-          onPress={() => cancelMutation.mutate()}
-          disabled={cancelMutation.isPending}
-          style={{ marginTop: matchedDemo?.id ? 12 : 24, padding: 12, opacity: cancelMutation.isPending ? 0.5 : 1 }}
-        >
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
-            {cancelMutation.isPending ? 'Cancelling…' : 'Cancel order'}
-          </Text>
-        </Pressable>
+        {!matchedDemo?.id ? (
+          <Pressable
+            onPress={() => cancelMutation.mutate()}
+            disabled={cancelMutation.isPending}
+            style={{ marginTop: 24, padding: 12, opacity: cancelMutation.isPending ? 0.5 : 1 }}
+          >
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+              {cancelMutation.isPending ? 'Cancelling…' : 'Cancel order'}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {/* TEST MODE badge */}
         <View style={{ marginTop: 20, paddingHorizontal: 12, paddingVertical: 5, backgroundColor: '#1a1a2e', borderRadius: 8, borderWidth: 1, borderColor: '#333' }}>
