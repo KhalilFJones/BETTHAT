@@ -107,19 +107,15 @@ ALTER TABLE public.notification_preferences
 
 
 -- =============================================================================
--- SECTION 6 — REMOVE SIDEBET TRANSACTION TYPES
+-- SECTION 6 — TRANSACTION TYPES: retain sidebet_* as historical-only
 -- =============================================================================
--- Recreate the transactions.type CHECK without the sidebet_* values. (No prod
--- sidebet rows exist; if any did, this would need a data backfill first.)
-
-ALTER TABLE public.transactions
-  DROP CONSTRAINT IF EXISTS transactions_type_check;
-
-ALTER TABLE public.transactions
-  ADD CONSTRAINT transactions_type_check CHECK (type IN (
-    'deposit', 'withdrawal', 'entry_fee', 'payout', 'rake',
-    'escrow_hold', 'escrow_release', 'refund'
-  ));
+-- The sidebet FEATURE is removed, but production ledgers may already contain
+-- transactions of type 'sidebet_wager' / 'sidebet_payout'. Financial history
+-- must never be invalidated, and no NEW rows of these types can be created once
+-- the RPCs and tables are gone — so we intentionally leave the
+-- transactions.type CHECK constraint untouched (sidebet_* remain valid for
+-- historical rows only). This is deliberately a no-op; documented so the
+-- omission is clearly a choice, not an oversight.
 
 
 -- =============================================================================
