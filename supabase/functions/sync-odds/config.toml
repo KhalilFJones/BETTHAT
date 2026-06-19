@@ -1,0 +1,4 @@
+[functions.sync-odds]
+# Disable JWT verification so pg_cron can call this function via the internal
+# x-sync-secret header without needing a Supabase JWT.
+verify_jwt = false
