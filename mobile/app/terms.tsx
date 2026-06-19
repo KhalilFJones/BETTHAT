@@ -52,7 +52,7 @@ export default function TermsScreen() {
         </Section>
 
         <Section title="7. Fees and Rake">
-          BETTHAT charges a 3.5% rake on the winning pot of each matchup. Sidebet payouts are at -110 (90.9%) odds on each side. All fees are disclosed prior to submission.
+          BETTHAT charges a 3.5% rake on the winning pot of each matchup. All fees are disclosed prior to submission.
         </Section>
 
         <Section title="8. Withdrawals">

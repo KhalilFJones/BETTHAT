@@ -5,7 +5,10 @@
 -- =============================================================================
 
 -- ── 1. Update nba_teams with ESPN external_ids ────────────────────────────────
--- ESPN uses numeric IDs (as strings in our schema)
+-- ESPN uses numeric IDs (as strings in our schema). The nba_teams table never
+-- had an external_id column (unlike nba_players/nba_games), so add it first.
+ALTER TABLE public.nba_teams ADD COLUMN IF NOT EXISTS external_id TEXT;
+
 UPDATE nba_teams SET external_id = '1'  WHERE abbreviation = 'ATL';
 UPDATE nba_teams SET external_id = '2'  WHERE abbreviation = 'BOS';
 UPDATE nba_teams SET external_id = '3'  WHERE abbreviation = 'NOP';

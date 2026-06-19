@@ -16,7 +16,7 @@ interface Props {
   showBack?: boolean;
 }
 
-// Holy Grail Top Bar — used on Home, Market, Matchups, Sidebets, Profile.
+// Holy Grail Top Bar — used on Home, Market, Matchups, Profile.
 // Friends icon left, BETTHAT wordmark center, wallet pill right.
 export function ScreenHeader({ walletBalance, onWalletPress, onFriendsPress, brand = 'BETTHAT', showBack }: Props) {
   const router = useRouter();

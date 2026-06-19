@@ -622,6 +622,14 @@ function upNextSlateLabel(date: string): string {
   return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
+/** Tip-off time a player's price locks, e.g. "7:30 PM". Null if no scheduled tip. */
+function fmtLockTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 /** Returns a human-readable label for the selected slate date. */
 function slateLabel(date: string, today: string): string {
   if (date === today) return 'Tonight';
@@ -709,9 +717,17 @@ function PlayerRow({
 }) {
   const pp = player.player_prices!;
   const isLocked = pp.is_locked;
+  // 'live' = price frozen because the game tipped off; 'injury' = OUT/inactive.
+  const lockKind: 'live' | 'injury' | null = !isLocked
+    ? null
+    : pp.lock_reason === 'game_live'
+      ? 'live'
+      : 'injury';
+  const lockLabel = lockKind === 'live' ? 'LOCKED' : 'OUT';
   const dirColor = priceDirectionColor(pp.price_change_pct_24h);
-  const addLabel = isLocked ? 'Out' : isPicked ? 'Added' : '+ Add';
+  const addLabel = isLocked ? (lockKind === 'live' ? 'Locked' : 'Out') : isPicked ? 'Added' : '+ Add';
   const addState: 'add' | 'added' | 'locked' = isLocked ? 'locked' : isPicked ? 'added' : 'add';
+  const lockHint = !isLocked ? fmtLockTime(player.game_tip_off) : null;
   const isLive = liveFpts != null;
   const proj = isLive ? null : player.last5_avg_fpts != null ? Number(player.last5_avg_fpts).toFixed(1) : null;
 
@@ -739,9 +755,9 @@ function PlayerRow({
           >
             {player.full_name}
           </Text>
-          {isLocked ? (
-            <View style={{ backgroundColor: HG.downSoft, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
-              <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: HG.down, letterSpacing: 0.6 }}>OUT</Text>
+          {lockKind ? (
+            <View style={{ backgroundColor: lockKind === 'live' ? HG.navySoft : HG.downSoft, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: lockKind === 'live' ? HG.muted : HG.down, letterSpacing: 0.6 }}>{lockLabel}</Text>
             </View>
           ) : null}
         </View>
@@ -761,6 +777,11 @@ function PlayerRow({
             </View>
           ) : null}
           <DemandChip count={pp.demand_count_1h} />
+          {lockHint ? (
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted2, letterSpacing: 0.4 }}>
+              Locks {lockHint}
+            </Text>
+          ) : null}
         </View>
       </View>
 

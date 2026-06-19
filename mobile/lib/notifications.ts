@@ -145,12 +145,9 @@ export function useNotificationRouting() {
       const data = response.notification.request.content.data as Record<string, unknown>;
       const type = data?.type as string | undefined;
       const matchupId = data?.matchup_id as string | undefined;
-      const sidebetId = data?.sidebet_id as string | undefined;
 
       if (matchupId && (type === 'matchup_chat' || type === 'matchup_score' || type === 'matchup_found')) {
         router.push(`/matchup/${matchupId}` as any);
-      } else if (sidebetId) {
-        router.push(`/sidebet/${sidebetId}` as any);
       } else if (type === 'friend_request') {
         router.push('/friends' as any);
       } else if (type === 'deposit_confirmed' || type === 'withdrawal_processed') {

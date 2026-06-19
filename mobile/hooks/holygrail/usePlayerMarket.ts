@@ -22,6 +22,9 @@ export interface PlayerMarketRow {
   injury_note: string | null;
   season_avg_fpts: number | null;
   last5_avg_fpts: number | null;
+  // Pulled from the player's game on the selected slate (see mapping below).
+  game_status: string | null;
+  game_tip_off: string | null;
   // player_prices.player_id has a unique constraint, so Supabase returns a
   // single object (or null) — not an array.
   player_prices: {
@@ -29,6 +32,8 @@ export interface PlayerMarketRow {
     price_change_24h: number | null;
     price_change_pct_24h: number | null;
     is_locked: boolean;
+    lock_reason: string | null;
+    market_close_at: string | null;
     demand_count_1h: number | null;
     total_selections: number | null;
   } | null;
@@ -92,12 +97,12 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     .from('player_game_availability')
     .select(`
       is_draftable,
-      nba_games!inner(status),
+      nba_games!inner(status, tip_off_time),
       nba_players!inner(
         id, full_name, first_name, last_name, position, jersey_number,
         team_abbreviation, ticker_handle, salary_tier, is_injured, injury_note,
         season_avg_fpts, last5_avg_fpts,
-        player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, demand_count_1h, total_selections)
+        player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, lock_reason, market_close_at, demand_count_1h, total_selections)
       )
     `)
     .eq('game_date', slateDate)
@@ -159,7 +164,14 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
   }
 
   return {
-    tonight: (((tonightQ.data ?? []) as unknown) as Array<{ nba_players: PlayerMarketRow }>).map((r) => r.nba_players),
+    tonight: (((tonightQ.data ?? []) as unknown) as Array<{
+      nba_players: PlayerMarketRow;
+      nba_games: { status: string | null; tip_off_time: string | null } | null;
+    }>).map((r) => ({
+      ...r.nba_players,
+      game_status: r.nba_games?.status ?? null,
+      game_tip_off: r.nba_games?.tip_off_time ?? null,
+    })),
     history,
     lineup: (lineupQ.data ?? null) as unknown as InProgressLineup | null,
     trending: ((trendingQ.data ?? []) as unknown) as TrendingRow[],

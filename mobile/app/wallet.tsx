@@ -215,8 +215,6 @@ function prettyType(t: string): string {
     case 'entry_fee': return 'Order';
     case 'payout': return 'Payout';
     case 'refund': return 'Refund';
-    case 'sidebet_wager': return 'Sidebet';
-    case 'sidebet_payout': return 'Sidebet payout';
     case 'rake': return 'Rake';
     case 'escrow_hold': return 'Escrow hold';
     case 'escrow_release': return 'Escrow release';

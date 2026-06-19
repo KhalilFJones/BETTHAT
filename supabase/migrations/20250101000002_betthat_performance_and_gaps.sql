@@ -478,10 +478,11 @@ SELECT cron.schedule(
   $$ REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_player_market $$
 );
 
--- Refresh open sidebets feed every 60 seconds
+-- Refresh open sidebets feed every minute
+-- (pg_cron's seconds-interval syntax only accepts 1-59; use standard cron for 1 min)
 SELECT cron.schedule(
   'refresh-open-sidebets',
-  '60 seconds',
+  '* * * * *',
   $$ REFRESH MATERIALIZED VIEW CONCURRENTLY public.mv_open_sidebets $$
 );
 

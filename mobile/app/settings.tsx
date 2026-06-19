@@ -78,7 +78,7 @@ export default function SettingsScreen() {
   function confirmSelfExclude() {
     Alert.alert(
       'Self-Exclusion',
-      'This will pause your account for 30 days. You will not be able to enter new matchups or sidebets. This action cannot be reversed by you.',
+      'This will pause your account for 30 days. You will not be able to enter new matchups. This action cannot be reversed by you.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Self-Exclude', style: 'destructive', onPress: () => selfExclude.mutate(30) },
@@ -150,8 +150,6 @@ export default function SettingsScreen() {
         <SectionLabel text="Notifications" />
         <ToggleRow label="Matchup Found" value={notifPrefs?.push_matchup_found ?? true} onToggle={(v) => updateNotifPref.mutate({ push_matchup_found: v })} />
         <ToggleRow label="Game Final" value={notifPrefs?.push_game_final ?? true} onToggle={(v) => updateNotifPref.mutate({ push_game_final: v })} />
-        <ToggleRow label="Sidebet Received" value={notifPrefs?.push_sidebet_received ?? true} onToggle={(v) => updateNotifPref.mutate({ push_sidebet_received: v })} />
-        <ToggleRow label="Sidebet Result" value={notifPrefs?.push_sidebet_result ?? true} onToggle={(v) => updateNotifPref.mutate({ push_sidebet_result: v })} />
         <ToggleRow label="Friend Activity" value={notifPrefs?.push_friend_request ?? true} onToggle={(v) => updateNotifPref.mutate({ push_friend_request: v })} />
         <ToggleRow label="Deposit & Withdrawal" value={notifPrefs?.push_deposit_confirmed ?? true} onToggle={(v) => updateNotifPref.mutate({ push_deposit_confirmed: v })} />
         <ToggleRow label="Promotions (email)" value={notifPrefs?.email_promotions ?? false} onToggle={(v) => updateNotifPref.mutate({ email_promotions: v })} />

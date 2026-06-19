@@ -1082,8 +1082,8 @@ SET search_path = public, pg_temp
 AS $$
 DECLARE
   v_m         RECORD;
-  v_lineup1   RECORD;
-  v_lineup2   RECORD;
+  v_total1    NUMERIC;
+  v_total2    NUMERIC;
   v_winner    UUID;
   v_winner_lineup UUID;
   v_all_final BOOLEAN;
@@ -1111,19 +1111,19 @@ BEGIN
      GROUP BY lp.lineup_id
   )
   SELECT
-    (SELECT total FROM totals WHERE lineup_id = v_m.lineup1_id) AS l1,
-    (SELECT total FROM totals WHERE lineup_id = v_m.lineup2_id) AS l2
-  INTO v_lineup1, v_lineup2;
+    COALESCE((SELECT total FROM totals WHERE lineup_id = v_m.lineup1_id), 0),
+    COALESCE((SELECT total FROM totals WHERE lineup_id = v_m.lineup2_id), 0)
+  INTO v_total1, v_total2;
 
-  UPDATE public.lineups SET fantasy_points_total = COALESCE(v_lineup1.l1, 0)
+  UPDATE public.lineups SET fantasy_points_total = v_total1
    WHERE id = v_m.lineup1_id;
-  UPDATE public.lineups SET fantasy_points_total = COALESCE(v_lineup2.l1, 0)
+  UPDATE public.lineups SET fantasy_points_total = v_total2
    WHERE id = v_m.lineup2_id;
 
-  IF COALESCE(v_lineup1.l1,0) > COALESCE(v_lineup2.l1,0) THEN
+  IF v_total1 > v_total2 THEN
     v_winner := v_m.user1_id;
     v_winner_lineup := v_m.lineup1_id;
-  ELSIF COALESCE(v_lineup2.l1,0) > COALESCE(v_lineup1.l1,0) THEN
+  ELSIF v_total2 > v_total1 THEN
     v_winner := v_m.user2_id;
     v_winner_lineup := v_m.lineup2_id;
   ELSE

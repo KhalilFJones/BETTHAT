@@ -1,6 +1,6 @@
 // =============================================================================
 // SwipeToConfirm — Holy Grail V2 swipe-to-place gesture, reusable.
-// Used by Place Order (Screen 06) and Sidebet Accept (Screen 09).
+// Used by Place Order (Screen 06).
 //
 // CRITICAL: trackWidth must be a useSharedValue, not a useRef. Worklet
 // callbacks (Gesture.Pan().onUpdate / .onEnd) run on the UI thread and cannot

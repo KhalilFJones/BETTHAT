@@ -409,13 +409,6 @@ export type Database = {
             foreignKeyName: "lineup_players_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "lineup_players_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
             referencedRelation: "mv_todays_games"
             referencedColumns: ["id"]
           },
@@ -432,13 +425,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lineups"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "lineup_players_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
           },
           {
             foreignKeyName: "lineup_players_player_id_fkey"
@@ -572,13 +558,6 @@ export type Database = {
             foreignKeyName: "live_player_scores_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "live_player_scores_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
             referencedRelation: "mv_todays_games"
             referencedColumns: ["id"]
           },
@@ -602,13 +581,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "lineup_players"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "live_player_scores_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
           },
           {
             foreignKeyName: "live_player_scores_player_id_fkey"
@@ -719,13 +691,6 @@ export type Database = {
             foreignKeyName: "matchup_activity_events_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "matchup_activity_events_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
             referencedRelation: "mv_todays_games"
             referencedColumns: ["id"]
           },
@@ -749,13 +714,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "matchups"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "matchup_activity_events_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
           },
           {
             foreignKeyName: "matchup_activity_events_player_id_fkey"
@@ -857,13 +815,6 @@ export type Database = {
           matchup_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "matchup_games_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
           {
             foreignKeyName: "matchup_games_game_id_fkey"
             columns: ["game_id"]
@@ -1381,8 +1332,6 @@ export type Database = {
           push_game_starting: boolean
           push_matchup_found: boolean
           push_price_alert: boolean
-          push_sidebet_received: boolean
-          push_sidebet_result: boolean
           push_withdrawal_processed: boolean
           updated_at: string
           user_id: string
@@ -1404,8 +1353,6 @@ export type Database = {
           push_game_starting?: boolean
           push_matchup_found?: boolean
           push_price_alert?: boolean
-          push_sidebet_received?: boolean
-          push_sidebet_result?: boolean
           push_withdrawal_processed?: boolean
           updated_at?: string
           user_id: string
@@ -1427,8 +1374,6 @@ export type Database = {
           push_game_starting?: boolean
           push_matchup_found?: boolean
           push_price_alert?: boolean
-          push_sidebet_received?: boolean
-          push_sidebet_result?: boolean
           push_withdrawal_processed?: boolean
           updated_at?: string
           user_id?: string
@@ -1591,13 +1536,6 @@ export type Database = {
             foreignKeyName: "player_game_availability_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "player_game_availability_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
             referencedRelation: "mv_todays_games"
             referencedColumns: ["id"]
           },
@@ -1607,13 +1545,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "nba_games"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "player_game_availability_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
           },
           {
             foreignKeyName: "player_game_availability_player_id_fkey"
@@ -1706,13 +1637,6 @@ export type Database = {
             foreignKeyName: "player_game_stats_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "player_game_stats_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
             referencedRelation: "mv_todays_games"
             referencedColumns: ["id"]
           },
@@ -1722,13 +1646,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "nba_games"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "player_game_stats_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
           },
           {
             foreignKeyName: "player_game_stats_player_id_fkey"
@@ -1785,13 +1702,6 @@ export type Database = {
             foreignKeyName: "player_news_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
-          },
-          {
-            foreignKeyName: "player_news_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
             referencedRelation: "mv_player_market"
             referencedColumns: ["player_id"]
           },
@@ -1812,6 +1722,7 @@ export type Database = {
           current_price: number
           demand_count_1h: number | null
           demand_level: string | null
+          fair_price: number | null
           id: string
           injury_modifier: number | null
           is_locked: boolean
@@ -1819,6 +1730,7 @@ export type Database = {
           market_close_at: string | null
           market_open_at: string | null
           matchup_modifier: number | null
+          next_game_id: string | null
           player_id: string
           price_acceleration: number | null
           price_ceiling: number
@@ -1837,6 +1749,7 @@ export type Database = {
           current_price: number
           demand_count_1h?: number | null
           demand_level?: string | null
+          fair_price?: number | null
           id?: string
           injury_modifier?: number | null
           is_locked?: boolean
@@ -1844,6 +1757,7 @@ export type Database = {
           market_close_at?: string | null
           market_open_at?: string | null
           matchup_modifier?: number | null
+          next_game_id?: string | null
           player_id: string
           price_acceleration?: number | null
           price_ceiling: number
@@ -1862,6 +1776,7 @@ export type Database = {
           current_price?: number
           demand_count_1h?: number | null
           demand_level?: string | null
+          fair_price?: number | null
           id?: string
           injury_modifier?: number | null
           is_locked?: boolean
@@ -1869,6 +1784,7 @@ export type Database = {
           market_close_at?: string | null
           market_open_at?: string | null
           matchup_modifier?: number | null
+          next_game_id?: string | null
           player_id?: string
           price_acceleration?: number | null
           price_ceiling?: number
@@ -1881,13 +1797,6 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "player_prices_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: true
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
-          },
           {
             foreignKeyName: "player_prices_player_id_fkey"
             columns: ["player_id"]
@@ -1985,13 +1894,6 @@ export type Database = {
             foreignKeyName: "player_season_stats_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
-          },
-          {
-            foreignKeyName: "player_season_stats_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
             referencedRelation: "mv_player_market"
             referencedColumns: ["player_id"]
           },
@@ -2070,13 +1972,6 @@ export type Database = {
             foreignKeyName: "price_history_player_id_fkey"
             columns: ["player_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
-          },
-          {
-            foreignKeyName: "price_history_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
             referencedRelation: "mv_player_market"
             referencedColumns: ["player_id"]
           },
@@ -2113,8 +2008,6 @@ export type Database = {
           total_earnings: number
           total_entries: number
           total_losses: number
-          total_sidebets_lost: number
-          total_sidebets_won: number
           total_wins: number
           tutorial_completed: boolean
           tutorial_completed_at: string | null
@@ -2145,8 +2038,6 @@ export type Database = {
           total_earnings?: number
           total_entries?: number
           total_losses?: number
-          total_sidebets_lost?: number
-          total_sidebets_won?: number
           total_wins?: number
           tutorial_completed?: boolean
           tutorial_completed_at?: string | null
@@ -2177,8 +2068,6 @@ export type Database = {
           total_earnings?: number
           total_entries?: number
           total_losses?: number
-          total_sidebets_lost?: number
-          total_sidebets_won?: number
           total_wins?: number
           tutorial_completed?: boolean
           tutorial_completed_at?: string | null
@@ -2292,13 +2181,6 @@ export type Database = {
             foreignKeyName: "prop_lines_game_id_fkey"
             columns: ["game_id"]
             isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "prop_lines_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
             referencedRelation: "mv_todays_games"
             referencedColumns: ["id"]
           },
@@ -2308,13 +2190,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "nba_games"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "prop_lines_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
           },
           {
             foreignKeyName: "prop_lines_player_id_fkey"
@@ -2506,272 +2381,6 @@ export type Database = {
             foreignKeyName: "responsible_gaming_settings_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sidebet_messages: {
-        Row: {
-          content: string | null
-          created_at: string
-          id: string
-          is_deleted: boolean
-          message_type: string
-          sidebet_id: string
-          user_id: string
-        }
-        Insert: {
-          content?: string | null
-          created_at?: string
-          id?: string
-          is_deleted?: boolean
-          message_type?: string
-          sidebet_id: string
-          user_id: string
-        }
-        Update: {
-          content?: string | null
-          created_at?: string
-          id?: string
-          is_deleted?: boolean
-          message_type?: string
-          sidebet_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sidebet_messages_sidebet_id_fkey"
-            columns: ["sidebet_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebet_messages_sidebet_id_fkey"
-            columns: ["sidebet_id"]
-            isOneToOne: false
-            referencedRelation: "sidebets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebet_messages_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sidebet_reactions: {
-        Row: {
-          created_at: string
-          id: string
-          reaction: string
-          sidebet_id: string
-          user_id: string
-        }
-        Insert: {
-          created_at?: string
-          id?: string
-          reaction: string
-          sidebet_id: string
-          user_id: string
-        }
-        Update: {
-          created_at?: string
-          id?: string
-          reaction?: string
-          sidebet_id?: string
-          user_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sidebet_reactions_sidebet_id_fkey"
-            columns: ["sidebet_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebet_reactions_sidebet_id_fkey"
-            columns: ["sidebet_id"]
-            isOneToOne: false
-            referencedRelation: "sidebets"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebet_reactions_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sidebets: {
-        Row: {
-          accepted_at: string | null
-          comment_count: number
-          completed_at: string | null
-          created_at: string
-          creator_id: string
-          creator_reasoning: string | null
-          creator_side: string
-          dislike_count: number
-          expires_at: string
-          final_stat_value: number | null
-          game_id: string
-          id: string
-          is_friend_bet: boolean
-          is_open: boolean
-          like_count: number
-          line_value: number
-          opponent_id: string | null
-          opponent_reasoning: string | null
-          payout_amount: number | null
-          player_id: string
-          prop_line_id: string | null
-          rake_amount: number | null
-          stat_category: string
-          status: string
-          targeted_user_id: string | null
-          wager_amount: number
-          winner_id: string | null
-        }
-        Insert: {
-          accepted_at?: string | null
-          comment_count?: number
-          completed_at?: string | null
-          created_at?: string
-          creator_id: string
-          creator_reasoning?: string | null
-          creator_side: string
-          dislike_count?: number
-          expires_at?: string
-          final_stat_value?: number | null
-          game_id: string
-          id?: string
-          is_friend_bet?: boolean
-          is_open?: boolean
-          like_count?: number
-          line_value: number
-          opponent_id?: string | null
-          opponent_reasoning?: string | null
-          payout_amount?: number | null
-          player_id: string
-          prop_line_id?: string | null
-          rake_amount?: number | null
-          stat_category: string
-          status?: string
-          targeted_user_id?: string | null
-          wager_amount: number
-          winner_id?: string | null
-        }
-        Update: {
-          accepted_at?: string | null
-          comment_count?: number
-          completed_at?: string | null
-          created_at?: string
-          creator_id?: string
-          creator_reasoning?: string | null
-          creator_side?: string
-          dislike_count?: number
-          expires_at?: string
-          final_stat_value?: number | null
-          game_id?: string
-          id?: string
-          is_friend_bet?: boolean
-          is_open?: boolean
-          like_count?: number
-          line_value?: number
-          opponent_id?: string | null
-          opponent_reasoning?: string | null
-          payout_amount?: number | null
-          player_id?: string
-          prop_line_id?: string | null
-          rake_amount?: number | null
-          stat_category?: string
-          status?: string
-          targeted_user_id?: string | null
-          wager_amount?: number
-          winner_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sidebets_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["game_id"]
-          },
-          {
-            foreignKeyName: "sidebets_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
-            referencedRelation: "mv_todays_games"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_game_id_fkey"
-            columns: ["game_id"]
-            isOneToOne: false
-            referencedRelation: "nba_games"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_opponent_id_fkey"
-            columns: ["opponent_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_open_sidebets"
-            referencedColumns: ["player_id"]
-          },
-          {
-            foreignKeyName: "sidebets_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "mv_player_market"
-            referencedColumns: ["player_id"]
-          },
-          {
-            foreignKeyName: "sidebets_player_id_fkey"
-            columns: ["player_id"]
-            isOneToOne: false
-            referencedRelation: "nba_players"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_prop_line_id_fkey"
-            columns: ["prop_line_id"]
-            isOneToOne: false
-            referencedRelation: "prop_lines"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_targeted_user_id_fkey"
-            columns: ["targeted_user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_winner_id_fkey"
-            columns: ["winner_id"]
-            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -3395,52 +3004,6 @@ export type Database = {
       }
     }
     Views: {
-      mv_open_sidebets: {
-        Row: {
-          away_team_abbreviation: string | null
-          created_at: string | null
-          creator_avatar: string | null
-          creator_id: string | null
-          creator_rank: string | null
-          creator_reasoning: string | null
-          creator_side: string | null
-          creator_username: string | null
-          expires_at: string | null
-          game_date: string | null
-          game_id: string | null
-          home_team_abbreviation: string | null
-          id: string | null
-          is_friend_bet: boolean | null
-          line_value: number | null
-          over_odds: number | null
-          player_headshot: string | null
-          player_id: string | null
-          player_name: string | null
-          prop_line_value: number | null
-          stat_category: string | null
-          targeted_user_id: string | null
-          team_abbreviation: string | null
-          tip_off_time: string | null
-          under_odds: number | null
-          wager_amount: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "sidebets_creator_id_fkey"
-            columns: ["creator_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "sidebets_targeted_user_id_fkey"
-            columns: ["targeted_user_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       mv_player_market: {
         Row: {
           assists_per_game: number | null
@@ -3654,9 +3217,6 @@ export type LineupPlayer          = _PublicTables['lineup_players']['Row'];
 export type Matchup               = _PublicTables['matchups']['Row'];
 export type MatchmakingQueue      = _PublicTables['matchmaking_queue']['Row'];
 export type MatchupActivityEvent  = _PublicTables['matchup_activity_events']['Row'];
-export type Sidebet               = _PublicTables['sidebets']['Row'];
-export type SidebetMessage        = _PublicTables['sidebet_messages']['Row'];
-export type SidebetReaction       = _PublicTables['sidebet_reactions']['Row'];
 export type Friend                = _PublicTables['friends']['Row'];
 export type FriendChallenge       = _PublicTables['friend_challenges']['Row'];
 export type Achievement           = _PublicTables['achievements']['Row'];

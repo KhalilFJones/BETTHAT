@@ -6,7 +6,7 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 
-// Holy Grail V2 tab bar — Home · Market · Matchups · Sidebets · Profile.
+// Holy Grail V2 tab bar — Home · Market · Matchups · Profile.
 // Sky blue active, muted gray inactive. Plex Mono labels.
 // Underlying file `lineup.tsx` retained as Market route to avoid breaking
 // existing deep-link references; label and icon present as Market.
@@ -39,12 +39,6 @@ function Icon({ name, color }: { name: string; color: string }) {
         <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
           <Circle cx={12} cy={12} r={9} />
           <Path d="M12 3v18M3 12h18" />
-        </Svg>
-      );
-    case 'sidebets':
-      return (
-        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
-          <Path d="M21 15a4 4 0 0 1-4 4H8l-5 3V6a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
         </Svg>
       );
     case 'profile':
@@ -150,12 +144,6 @@ export default function TabLayout() {
         name="matchups"
         options={{
           tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} label="Matchups" badge={!!hasLive} />,
-        }}
-      />
-      <Tabs.Screen
-        name="sidebets"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon iconName="sidebets" focused={focused} label="Sidebets" />,
         }}
       />
       <Tabs.Screen
