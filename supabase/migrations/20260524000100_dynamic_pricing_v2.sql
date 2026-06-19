@@ -30,8 +30,14 @@
 -- =============================================================================
 
 ALTER TABLE public.player_prices
-  ADD COLUMN IF NOT EXISTS fair_price   DECIMAL(8,2),
-  ADD COLUMN IF NOT EXISTS next_game_id UUID REFERENCES public.nba_games(id);
+  ADD COLUMN IF NOT EXISTS fair_price             DECIMAL(8,2),
+  ADD COLUMN IF NOT EXISTS next_game_id           UUID REFERENCES public.nba_games(id),
+  -- demand_count_this_tick / active_users_snapshot are normally added by
+  -- 20260513000000, but that migration is not fully reflected on every
+  -- environment (prod was missing them). Add defensively so the pricing engine
+  -- is self-sufficient and this migration applies on any prior schema state.
+  ADD COLUMN IF NOT EXISTS demand_count_this_tick INT NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS active_users_snapshot  INT NOT NULL DEFAULT 100;
 
 CREATE INDEX IF NOT EXISTS idx_player_prices_next_game
   ON public.player_prices(next_game_id);
