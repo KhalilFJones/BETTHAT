@@ -135,7 +135,7 @@ export default function HomeScreen() {
       const todayIds = (todayPlayers ?? []).map((r) => r.player_id);
       let q = supabase
         .from('player_prices')
-        .select(`player_id, current_price, price_change_pct_24h, demand_count_1h, demand_count_4h, total_selections,
+        .select(`player_id, current_price, price_change_pct_24h, demand_count_1h, total_selections,
           nba_players!inner(id, full_name, first_name, last_name, jersey_number, team_abbreviation, position, is_active)`)
         .eq('nba_players.is_active', true);
       if (todayIds.length > 0) q = q.in('player_id', todayIds);
@@ -147,7 +147,7 @@ export default function HomeScreen() {
       if (trendingRange === '4h') {
         const { data } = await q.order('demand_count_1h', { ascending: false }).limit(20);
         return (data ?? []).sort((a: any, b: any) =>
-          Number(b.demand_count_4h ?? b.demand_count_1h ?? 0) - Number(a.demand_count_4h ?? a.demand_count_1h ?? 0)
+          Number(b.demand_count_1h ?? 0) - Number(a.demand_count_1h ?? 0)
         ).slice(0, 12);
       }
       if (trendingRange === '24h') {
