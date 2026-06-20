@@ -24,6 +24,7 @@ import Animated, {
 import Svg, { Path } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
+import { placeLineupOrder } from '@/services/matchup';
 import { useAuthStore } from '@/stores/auth.store';
 import {
   HG, FONT, fmtPrice, playerLastName, playerInitials,
@@ -82,85 +83,10 @@ export default function PlaceOrderScreen() {
   const placeMutation = useMutation({
     mutationFn: async () => {
       if (!profile?.id || !lineup?.id) throw new Error('Missing lineup');
-      const gameDate = new Date().toISOString().slice(0, 10);
-
-      // 1. Submit lineup: status → submitted, lock max_wager
-      const { error: e1 } = await supabase
-        .from('lineups')
-        .update({ status: 'submitted', max_wager: wagerNum, submitted_at: new Date().toISOString(), locked_at: new Date().toISOString() })
-        .eq('id', lineup.id);
-      if (e1) throw e1;
-
-      // 2. Look for an opponent already in the queue (any other user)
-      const { data: queueEntries } = await supabase
-        .from('matchmaking_queue')
-        .select('id, lineup_id, user_id, max_wager')
-        .neq('user_id', profile.id)
-        .gte('expires_at', new Date().toISOString())
-        .order('queued_at', { ascending: true })
-        .limit(10);
-
-      const match = (queueEntries ?? []).find((o: any) => {
-        // Match if both can cover at least MIN_WAGER
-        return Math.min(wagerNum, Number(o.max_wager)) >= 5;
-      });
-
-      if (match) {
-        // Found an opponent — create a matched matchup immediately
-        const settled = Math.min(wagerNum, Number(match.max_wager));
-        const pot = Number((settled * 2).toFixed(2));
-        const rake = Number((pot * 0.035).toFixed(2));
-        const payout = Number((pot - rake).toFixed(2));
-
-        // Remove the matched opponent from the queue first
-        await supabase.from('matchmaking_queue').delete().eq('id', match.id);
-
-        const { data: matchedRow, error: eMatch } = await supabase.from('matchups').insert({
-          lineup1_id: match.lineup_id,
-          lineup2_id: lineup.id,
-          user1_id: match.user_id,
-          user2_id: profile.id,
-          entry_tier: settled,
-          settled_wager: settled,
-          pot_amount: pot,
-          rake_amount: rake,
-          payout_amount: payout,
-          status: 'matched',
-          game_date: gameDate,
-          matched_at: new Date().toISOString(),
-        } as never).select('id').single();
-        if (eMatch) throw eMatch;
-        return { matchupId: matchedRow.id, matched: true };
-      } else {
-        // No opponent yet — join the queue and create a pending matchup so the user can see it
-        const { error: e2 } = await supabase
-          .from('matchmaking_queue')
-          .insert({
-            lineup_id: lineup.id,
-            user_id: profile.id,
-            entry_tier: wagerNum,
-            max_wager: wagerNum,
-            game_date: gameDate,
-          });
-        if (e2) throw e2;
-
-        const pot = Number((wagerNum * 2).toFixed(2));
-        const rake = Number((pot * 0.035).toFixed(2));
-        const payout = Number((pot - rake).toFixed(2));
-
-        const { data: pendingRow, error: e3 } = await supabase.from('matchups').insert({
-          lineup1_id: lineup.id,
-          user1_id: profile.id,
-          entry_tier: wagerNum,
-          pot_amount: pot,
-          rake_amount: rake,
-          payout_amount: payout,
-          status: 'pending',
-          game_date: gameDate,
-        } as never).select('id').single();
-        if (e3) throw e3;
-        return { matchupId: pendingRow.id, matched: false };
-      }
+      // Server-side RPC: validates the lineup + cap, escrows the wager atomically,
+      // and FIFO-matches against an open order (releasing each side's excess).
+      const result = await placeLineupOrder(lineup.id, wagerNum);
+      return { matchupId: result.matchup_id, matched: result.matched };
     },
     onSuccess: (result: any) => {
       setSubmitted(true);

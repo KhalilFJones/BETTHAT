@@ -1,36 +1,34 @@
 import { supabase } from '@/lib/supabase';
 
-export interface SubmitLineupResult {
+export interface PlaceOrderResult {
   matchup_id: string;
-  lineup_id: string;
-  total_cap_used: number;
-  joined_existing: boolean;
+  matched: boolean;
+  settled_wager?: number;
 }
 
 /**
- * Submit exactly 3 player ids at the given entry tier.
- * Server snapshots frozen prices, enforces salary cap, escrows the entry fee,
- * and attempts FIFO match against an open matchup.
+ * Place an order on a built lineup at an open max wager ($5–$50).
+ * Server-side (SECURITY DEFINER) this validates the lineup + cap, escrows the
+ * max wager atomically, and FIFO-matches against an open order — releasing each
+ * side's escrow above the settled amount. Replaces the old client-side direct
+ * inserts, which never escrowed the entry fee.
  */
-export async function submitLineupAndMatch(
-  entryTier: number,
-  playerIds: string[],
-): Promise<SubmitLineupResult> {
-  if (playerIds.length !== 3) {
-    throw new Error('lineup must contain exactly 3 players');
-  }
-  // RPC name types regenerate post-migration.
+export async function placeLineupOrder(
+  lineupId: string,
+  maxWager: number,
+): Promise<PlaceOrderResult> {
   const { data, error } = await supabase.rpc(
-    'submit_lineup_and_match' as never,
-    { p_entry_tier: entryTier, p_player_ids: playerIds } as never,
+    'place_lineup_order' as never,
+    { p_lineup_id: lineupId, p_max_wager: maxWager } as never,
   );
   if (error) throw new Error(error.message);
-  return data as unknown as SubmitLineupResult;
+  return data as unknown as PlaceOrderResult;
 }
 
-export async function cancelMatchupPending(matchupId: string): Promise<void> {
+/** Cancel a still-pending order and release the escrowed wager back to balance. */
+export async function cancelLineupOrder(matchupId: string): Promise<void> {
   const { error } = await supabase.rpc(
-    'cancel_matchup_pending' as never,
+    'cancel_lineup_order' as never,
     { p_matchup_id: matchupId } as never,
   );
   if (error) throw new Error(error.message);

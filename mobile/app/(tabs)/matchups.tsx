@@ -10,6 +10,7 @@ import { useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { supabase } from '@/lib/supabase';
+import { cancelLineupOrder } from '@/services/matchup';
 import { useAuthStore } from '@/stores/auth.store';
 import { HG, FONT, fmtPrice, fmtRelative, opponentColor } from '@/lib/holygrail';
 import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
@@ -54,17 +55,22 @@ export default function MatchupsScreen() {
     refetchInterval: 10_000,
   });
 
-  // Shared cancel: delete queue entry + pending matchup + reset lineup to building
+  // Cancel a pending order via the server RPC: releases the escrowed wager,
+  // voids the matchup, drops the queue entry, and resets the lineup to building.
   const cancelMutation = useMutation({
     mutationFn: async ({ lineupId, matchupId }: { lineupId: string; matchupId?: string }) => {
-      await supabase.from('matchmaking_queue').delete().eq('lineup_id', lineupId);
-      if (matchupId) {
-        await supabase.from('matchups').delete().eq('id', matchupId).eq('status', 'pending');
-      } else {
-        // Try to find by lineup1_id as fallback
-        await supabase.from('matchups').delete().eq('lineup1_id', lineupId).eq('status', 'pending');
+      let id = matchupId;
+      if (!id) {
+        const { data } = await supabase
+          .from('matchups')
+          .select('id')
+          .eq('lineup1_id', lineupId)
+          .eq('status', 'pending')
+          .maybeSingle();
+        id = data?.id;
       }
-      await supabase.from('lineups').update({ status: 'building', submitted_at: null, locked_at: null, max_wager: null }).eq('id', lineupId);
+      if (!id) throw new Error('Order not found');
+      await cancelLineupOrder(id);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['matchups-list'] });
