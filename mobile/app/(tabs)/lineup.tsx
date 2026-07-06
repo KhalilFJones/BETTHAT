@@ -583,7 +583,7 @@ export default function PlayerMarketScreen() {
             onTap={() => router.push(`/player/${item.id}` as any)}
           />
         )}
-        contentContainerStyle={{ paddingBottom: lineup && picked.length > 0 ? 240 : 60 }}
+        contentContainerStyle={{ paddingBottom: lineup && picked.length > 0 ? 240 : 120 }}
         ListEmptyComponent={
           isLoading ? (
             <View style={{ padding: 60, alignItems: 'center' }}>

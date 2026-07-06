@@ -1,20 +1,20 @@
 import { Tabs } from 'expo-router';
-import { View, Text, Platform } from 'react-native';
+import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 
-// Holy Grail V2 tab bar — Home · Market · Matchups · Profile.
-// Sky blue active, muted gray inactive. Plex Mono labels.
-// Underlying file `lineup.tsx` retained as Market route to avoid breaking
-// existing deep-link references; label and icon present as Market.
+// BETTHAT tab bar — floating dark pill, yellow active indicator.
+// Home · Market · Matchups · Profile. The pill stays dark in both light and
+// dark mode (matching the Figma). Underlying file `lineup.tsx` is the Market
+// route, kept to avoid breaking existing deep links.
 
-const SKY = '#5B9BD5';
-const MUTED = '#8A93A6';
-const JET = '#0A0A0C';
-const HAIRLINE = 'rgba(255,255,255,0.08)';
+const ACCENT = '#F0F600';   // Primary/400 (active)
+const ON_ACCENT = '#151517';
+const PILL = '#151517';     // Greyscale/800 pill surface
+const INACTIVE = '#8A8A8E'; // Greyscale/500 icons
 
 function Icon({ name, color }: { name: string; color: string }) {
   const stroke = color;
@@ -56,39 +56,32 @@ function Icon({ name, color }: { name: string; color: string }) {
 function TabIcon({
   iconName,
   focused,
-  label,
   badge = false,
 }: {
   iconName: string;
   focused: boolean;
-  label: string;
   badge?: boolean;
 }) {
-  const color = focused ? SKY : MUTED;
   return (
-    <View style={{ alignItems: 'center', justifyContent: 'center', paddingTop: 6, gap: 3 }}>
-      <View style={{ position: 'relative' }}>
-        <Icon name={iconName} color={color} />
-        {badge && (
-          <View style={{
-            position: 'absolute', top: -2, right: -4,
-            width: 8, height: 8, borderRadius: 4,
-            backgroundColor: '#FF3B30',
-            borderWidth: 1.5, borderColor: JET,
-          }} />
-        )}
-      </View>
-      <Text
-        style={{
-          fontSize: 10,
-          color,
-          letterSpacing: 0.4,
-          fontFamily: Platform.select({ ios: 'DMSans_500Medium', default: 'DMSans_500Medium' }),
-          fontWeight: focused ? '600' : '500',
-        }}
-      >
-        {label}
-      </Text>
+    <View
+      style={{
+        width: 46,
+        height: 46,
+        borderRadius: 999,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: focused ? ACCENT : 'transparent',
+      }}
+    >
+      <Icon name={iconName} color={focused ? ON_ACCENT : INACTIVE} />
+      {badge && (
+        <View style={{
+          position: 'absolute', top: 6, right: 6,
+          width: 8, height: 8, borderRadius: 4,
+          backgroundColor: '#FF3B30',
+          borderWidth: 1.5, borderColor: focused ? ACCENT : PILL,
+        }} />
+      )}
     </View>
   );
 }
@@ -117,40 +110,45 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: JET,
-          borderTopColor: HAIRLINE,
-          borderTopWidth: 1,
-          height: 68 + insets.bottom,
-          paddingBottom: insets.bottom + 4,
-          paddingTop: 6,
-        },
         tabBarShowLabel: false,
+        tabBarItemStyle: { height: 56 },
+        tabBarStyle: {
+          position: 'absolute',
+          width: 260,
+          left: '50%',
+          marginLeft: -130,
+          bottom: insets.bottom + 12,
+          height: 56,
+          borderRadius: 999,
+          backgroundColor: PILL,
+          borderTopWidth: 0,
+          paddingTop: 4,
+          paddingBottom: 0,
+          paddingHorizontal: 4,
+          // floating shadow
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 8 },
+          shadowOpacity: 0.25,
+          shadowRadius: 16,
+          elevation: 12,
+        },
       }}
     >
       <Tabs.Screen
         name="home"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon iconName="home" focused={focused} label="Home" />,
-        }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="home" focused={focused} /> }}
       />
       <Tabs.Screen
         name="lineup"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon iconName="market" focused={focused} label="Market" />,
-        }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="market" focused={focused} /> }}
       />
       <Tabs.Screen
         name="matchups"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} label="Matchups" badge={!!hasLive} />,
-        }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} badge={!!hasLive} /> }}
       />
       <Tabs.Screen
         name="profile"
-        options={{
-          tabBarIcon: ({ focused }) => <TabIcon iconName="profile" focused={focused} label="Profile" />,
-        }}
+        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="profile" focused={focused} /> }}
       />
     </Tabs>
   );

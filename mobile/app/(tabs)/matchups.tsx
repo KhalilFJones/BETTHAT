@@ -114,7 +114,7 @@ export default function MatchupsScreen() {
           return `m-${(item as any).m.id}`;
         }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
-        contentContainerStyle={{ paddingBottom: 80 }}
+        contentContainerStyle={{ paddingBottom: 120 }}
         ListEmptyComponent={
           isLoading ? (
             <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>

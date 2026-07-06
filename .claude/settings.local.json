@@ -1,6 +1,14 @@
 {
+  "permissions": {
+    "allow": [
+      "mcp__supabase__execute_sql",
+      "PowerShell($out = & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" \".\\\\node_modules\\\\typescript\\\\bin\\\\tsc\" --noEmit 2>&1; $code = $LASTEXITCODE; $errs = $out | Select-String -Pattern \"error TS\"; if \\($errs\\) { $errs } else { \"NO TS ERRORS\" }; \"EXIT=$code\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" \".\\\\node_modules\\\\typescript\\\\bin\\\\tsc\" --noEmit --pretty false | Out-File -FilePath \"$env:TEMP\\\\tsc_out.txt\" -Encoding utf8; \"EXIT=$LASTEXITCODE\"; Get-Content \"$env:TEMP\\\\tsc_out.txt\" | Select-Object -First 40)",
+      "PowerShell(Set-Location mobile; & \"C:\\\\Program Files\\\\nodejs\\\\node.exe\" \".\\\\node_modules\\\\typescript\\\\bin\\\\tsc\" --noEmit --pretty false | Out-File -FilePath \"$env:TEMP\\\\tsc_out.txt\" -Encoding utf8; \"EXIT=$LASTEXITCODE\"; $c = Get-Content \"$env:TEMP\\\\tsc_out.txt\"; if \\($c\\) { $c | Select-Object -First 40 } else { \"NO TS ERRORS\" })"
+    ]
+  },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "supabase"
-  ],
-  "enableAllProjectMcpServers": true
+  ]
 }
