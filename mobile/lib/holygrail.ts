@@ -162,8 +162,15 @@ export function calcFantasyPoints(s: {
 export const SALARY_CAP = 500;
 export const LINEUP_SIZE = 3;
 export const MIN_WAGER = 5;
-/** Today's date in YYYY-MM-DD local time. Re-evaluated on each module load. */
-export const SLATE_DATE_FALLBACK = new Date().toISOString().slice(0, 10);
+/**
+ * Today's date in YYYY-MM-DD local time. A function, not a module-level
+ * constant — this app is often left open across midnight, and a `const`
+ * captured once at import time would silently go stale for the rest of the
+ * session instead of rolling over with the real date.
+ */
+export function slateDateFallback(): string {
+  return new Date().toISOString().slice(0, 10);
+}
 
 // =============================================================================
 // OPPONENT COLOR SYSTEM (V2.1 Amendment 2)

@@ -43,11 +43,15 @@ export default function OnboardingScreen() {
       Alert.alert('Invalid Username', 'Username must be at least 3 characters (letters, numbers, underscores only).');
       return;
     }
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('id')
       .eq('username', clean)
       .maybeSingle();
+    if (error) {
+      Alert.alert('Error', 'Could not verify username availability. Please try again.');
+      return;
+    }
     if (data) {
       Alert.alert('Username Taken', 'Please choose a different username.');
       return;

@@ -14,12 +14,14 @@ import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme, type Theme } from '@/lib/theme';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 type Tab = 'friends' | 'requests' | 'search';
 
 export default function FriendsScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const queryClient = useQueryClient();
   const { profile } = useAuthStore();
@@ -80,6 +82,32 @@ export default function FriendsScreen() {
     enabled: searchQuery.length >= 2,
   });
 
+  // Every existing `friends` row involving me, in either direction — used to
+  // gate the Search tab's "Add" button. Without this, searching for someone
+  // you're already friends (or already have a pending request) with let you
+  // fire another insert: `friends` only has a UNIQUE(requester_id,
+  // recipient_id) constraint, which doesn't stop the REVERSE direction, so
+  // two users could each end up with a separate pending request to the other
+  // instead of one becoming an accept.
+  const { data: relationships } = useQuery({
+    queryKey: ['friend_relationships', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return new Map<string, string>();
+      const { data } = await supabase
+        .from('friends')
+        .select('requester_id, recipient_id, status')
+        .or(`requester_id.eq.${profile.id},recipient_id.eq.${profile.id}`)
+        .neq('status', 'declined');
+      const map = new Map<string, string>();
+      for (const row of (data ?? []) as any[]) {
+        const otherId = row.requester_id === profile.id ? row.recipient_id : row.requester_id;
+        map.set(otherId, row.status);
+      }
+      return map;
+    },
+    enabled: !!profile?.id,
+  });
+
   const sendRequest = useMutation({
     mutationFn: async (friendId: string) => {
       const { error } = await supabase
@@ -87,7 +115,10 @@ export default function FriendsScreen() {
         .insert({ requester_id: profile!.id, recipient_id: friendId, status: 'pending' });
       if (error) throw error;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['friends'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['friends'] });
+      queryClient.invalidateQueries({ queryKey: ['friend_relationships'] });
+    },
     onError: () => Alert.alert('Error', 'Could not send friend request.'),
   });
 
@@ -109,26 +140,26 @@ export default function FriendsScreen() {
   const reqCount = requests?.length ?? 0;
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
             <Path d="m15 18-6-6 6-6" />
           </Svg>
         </Pressable>
-        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginLeft: 12 }}>Friends</Text>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink, marginLeft: 12 }}>Friends</Text>
       </View>
 
       {/* Tabs */}
-      <View style={{ flexDirection: 'row', marginHorizontal: 18, backgroundColor: HG.surface, borderRadius: 12, padding: 4, marginTop: 8, marginBottom: 14, borderWidth: 1, borderColor: HG.hairline }}>
+      <View style={{ flexDirection: 'row', marginHorizontal: 18, backgroundColor: theme.surface, borderRadius: 12, padding: 4, marginTop: 8, marginBottom: 14, borderWidth: 1, borderColor: theme.hairline }}>
         {(['friends', 'requests', 'search'] as Tab[]).map((t) => (
           <Pressable
             key={t}
             onPress={() => setTab(t)}
-            style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center', backgroundColor: tab === t ? HG.sky : 'transparent' }}
+            style={{ flex: 1, paddingVertical: 8, borderRadius: 9, alignItems: 'center', backgroundColor: tab === t ? theme.accent : 'transparent' }}
           >
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, letterSpacing: 0.8, color: tab === t ? HG.jet : HG.muted, textTransform: 'capitalize' }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, letterSpacing: 0.8, color: tab === t ? theme.onAccent : theme.muted, textTransform: 'capitalize' }}>
               {t}{t === 'requests' && reqCount > 0 ? ` (${reqCount})` : ''}
             </Text>
           </Pressable>
@@ -140,41 +171,77 @@ export default function FriendsScreen() {
         {tab === 'search' && (
           <>
             <TextInput
-              style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontFamily: FONT.sans, fontSize: 14, color: HG.ink, marginBottom: 14 }}
+              style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontFamily: FONT.sans, fontSize: 14, color: theme.ink, marginBottom: 14 }}
               placeholder="Search by username…"
-              placeholderTextColor={HG.muted}
+              placeholderTextColor={theme.muted}
               value={searchQuery}
               onChangeText={setSearchQuery}
               autoCapitalize="none"
               autoCorrect={false}
             />
-            {searchLoading && <ActivityIndicator color={HG.sky} style={{ marginVertical: 16 }} />}
-            {searchResults?.map((u: any) => (
-              <UserRow
-                key={u.id}
-                user={u}
-                action={
-                  <Pressable
-                    onPress={() => sendRequest.mutate(u.id)}
-                    disabled={sendRequest.isPending}
-                    style={{ backgroundColor: HG.sky, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
-                  >
-                    <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.jet, letterSpacing: 0.8 }}>Add</Text>
-                  </Pressable>
-                }
-              />
-            ))}
+            {searchLoading && <ActivityIndicator color={theme.accent} style={{ marginVertical: 16 }} />}
+            {searchResults?.map((u: any) => {
+              const relStatus = relationships?.get(u.id);
+              const isSending = sendRequest.isPending && sendRequest.variables === u.id;
+              if (relStatus === 'accepted') {
+                return (
+                  <UserRow
+                    key={u.id}
+                    theme={theme}
+                    user={u}
+                    action={
+                      <Pressable
+                        onPress={() => router.push(`/user/${u.id}` as any)}
+                        style={{ borderWidth: 1, borderColor: theme.hairline, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
+                      >
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.ink2 }}>Friends</Text>
+                      </Pressable>
+                    }
+                  />
+                );
+              }
+              if (relStatus === 'pending') {
+                return (
+                  <UserRow
+                    key={u.id}
+                    theme={theme}
+                    user={u}
+                    action={
+                      <View style={{ borderWidth: 1, borderColor: theme.hairline, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted }}>Pending</Text>
+                      </View>
+                    }
+                  />
+                );
+              }
+              return (
+                <UserRow
+                  key={u.id}
+                  theme={theme}
+                  user={u}
+                  action={
+                    <Pressable
+                      onPress={() => sendRequest.mutate(u.id)}
+                      disabled={sendRequest.isPending}
+                      style={{ backgroundColor: theme.accent, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, opacity: isSending ? 0.6 : 1 }}
+                    >
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: theme.onAccent, letterSpacing: 0.8 }}>Add</Text>
+                    </Pressable>
+                  }
+                />
+              );
+            })}
           </>
         )}
 
         {tab === 'friends' && (
           <>
             {friendsLoading ? (
-              <ActivityIndicator color={HG.sky} style={{ marginTop: 40 }} />
+              <ActivityIndicator color={theme.accent} style={{ marginTop: 40 }} />
             ) : (friends?.length ?? 0) === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: HG.ink, marginBottom: 6 }}>No Friends Yet</Text>
-                <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, textAlign: 'center' }}>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: theme.ink, marginBottom: 6 }}>No Friends Yet</Text>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, textAlign: 'center' }}>
                   Use the Search tab to find players to challenge.
                 </Text>
               </View>
@@ -184,13 +251,14 @@ export default function FriendsScreen() {
                 return (
                   <UserRow
                     key={f.id}
+                    theme={theme}
                     user={friend}
                     action={
                       <Pressable
                         onPress={() => router.push(`/user/${friend.id}` as any)}
-                        style={{ borderWidth: 1, borderColor: HG.hairline, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
+                        style={{ borderWidth: 1, borderColor: theme.hairline, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 }}
                       >
-                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.ink2 }}>View</Text>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.ink2 }}>View</Text>
                       </Pressable>
                     }
                   />
@@ -204,33 +272,33 @@ export default function FriendsScreen() {
           <>
             {reqCount === 0 ? (
               <View style={{ alignItems: 'center', paddingVertical: 60 }}>
-                <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted }}>No pending requests.</Text>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted }}>No pending requests.</Text>
               </View>
             ) : (
               requests?.map((req: any) => {
                 const requester = req.requester;
                 return (
-                  <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: HG.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: HG.hairline }}>
+                  <View key={req.id} style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: theme.hairline }}>
                     <MonogramTile
                       initials={(requester.display_name ?? requester.username ?? '??').slice(0, 2).toUpperCase()}
                       size={40}
                       showJersey={false}
                     />
                     <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>{requester.display_name ?? requester.username}</Text>
-                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, marginTop: 2 }}>@{requester.username}</Text>
+                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: theme.ink }}>{requester.display_name ?? requester.username}</Text>
+                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, marginTop: 2 }}>@{requester.username}</Text>
                     </View>
                     <Pressable
                       onPress={() => respondRequest.mutate({ requestId: req.id, accept: false })}
-                      style={{ borderWidth: 1, borderColor: HG.down + '66', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, marginRight: 8 }}
+                      style={{ borderWidth: 1, borderColor: theme.danger + '66', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, marginRight: 8 }}
                     >
-                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.down }}>Ignore</Text>
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: theme.danger }}>Ignore</Text>
                     </Pressable>
                     <Pressable
                       onPress={() => respondRequest.mutate({ requestId: req.id, accept: true })}
-                      style={{ backgroundColor: HG.sky, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 }}
+                      style={{ backgroundColor: theme.accent, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 }}
                     >
-                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.jet }}>Accept</Text>
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: theme.onAccent }}>Accept</Text>
                     </Pressable>
                   </View>
                 );
@@ -244,17 +312,18 @@ export default function FriendsScreen() {
   );
 }
 
-function UserRow({ user, action }: {
+function UserRow({ user, action, theme }: {
   user: { username: string; display_name?: string | null; rank_tier?: string | null; total_wins?: number; total_losses?: number };
   action: React.ReactNode;
+  theme: Theme;
 }) {
   const initials = (user.display_name ?? user.username ?? '??').slice(0, 2).toUpperCase();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: HG.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: HG.hairline }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: theme.surface, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 10, borderWidth: 1, borderColor: theme.hairline }}>
       <MonogramTile initials={initials} size={40} showJersey={false} />
       <View style={{ flex: 1, marginLeft: 12 }}>
-        <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>{user.display_name ?? user.username}</Text>
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, marginTop: 2 }}>
+        <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: theme.ink }}>{user.display_name ?? user.username}</Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, marginTop: 2 }}>
           @{user.username} · {user.total_wins ?? 0}W {user.total_losses ?? 0}L
         </Text>
       </View>
@@ -262,4 +331,3 @@ function UserRow({ user, action }: {
     </View>
   );
 }
-

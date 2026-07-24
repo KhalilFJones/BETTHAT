@@ -148,10 +148,18 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
       : Promise.resolve({ data: [], error: null }),
   ]);
 
-  const errs = [tonightQ.error, historyQ.error, lineupQ.error, trendingQ.error].filter(Boolean);
+  // tonightQ is the primary data source — if it fails, there is no roster to
+  // show at all, so let it throw and surface as a real react-query error
+  // state (isError/error) instead of silently rendering as "no players match
+  // your filters," which is indistinguishable from a legitimately empty
+  // slate and hides real outages from users and QA.
+  if (tonightQ.error) throw tonightQ.error;
+
+  const errs = [historyQ.error, lineupQ.error, trendingQ.error].filter(Boolean);
   if (errs.length) {
-    // Surface the first error so the caller can render a helpful message,
-    // but don't throw — partial data is more useful than a blank screen.
+    // These are secondary/enrichment queries (sparklines, in-progress lineup,
+    // trending) — partial data (an empty sparkline, no sticky lineup bar) is
+    // more useful than blanking the whole screen, so degrade gracefully here.
     console.warn('Market query partial failure:', errs.map((e) => e?.message));
   }
 
@@ -184,6 +192,50 @@ export function usePlayerMarket(userId: string | undefined, slateDate?: string) 
     queryKey: ['player-market', userId, date],
     queryFn: () => fetchMarket(userId!, date),
     enabled: !!userId,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+  });
+}
+
+// ── Market ticker — lightweight standalone feed for the MarketTicker banner ─
+// Draft Market's own screen already derives ticker entries from the full
+// usePlayerMarket payload it has loaded anyway; this is for screens further
+// down the Draft Market flow (Game Setup, Order Details) that don't otherwise
+// fetch market data and shouldn't pull the whole (heavier) payload just to
+// show the same scrolling price banner.
+export interface MarketTickerRow {
+  ticker: string;
+  price: number;
+  pctChange: number;
+}
+
+export function useMarketTicker(slateDate?: string) {
+  const date = slateDate ?? new Date().toISOString().slice(0, 10);
+  return useQuery({
+    queryKey: ['market-ticker', date],
+    queryFn: async (): Promise<MarketTickerRow[]> => {
+      const { data, error } = await supabase
+        .from('player_game_availability')
+        .select(`
+          nba_players!inner(
+            full_name, ticker_handle,
+            player_prices(current_price, price_change_pct_24h)
+          )
+        `)
+        .eq('game_date', date)
+        .eq('is_draftable', true);
+      if (error) throw error;
+      return ((data ?? []) as any[])
+        .map((r) => r.nba_players)
+        .filter((p) => p?.player_prices?.price_change_pct_24h != null)
+        .map((p) => ({
+          ticker: (p.ticker_handle ?? p.full_name ?? '').toUpperCase(),
+          price: Number(p.player_prices.current_price),
+          pctChange: Number(p.player_prices.price_change_pct_24h ?? 0),
+        }))
+        .sort((a, b) => Math.abs(b.pctChange) - Math.abs(a.pctChange))
+        .slice(0, 16);
+    },
     staleTime: 30_000,
     refetchInterval: 60_000,
   });
@@ -294,6 +346,7 @@ export function useLivePlayerStats(playerIds: string[]) {
         .eq('nba_games.game_date', today)
         .in('player_id', playerIds);
       const m = new Map<string, LiveStatRow>();
+      let hasLiveGame = false;
       for (const r of (data ?? []) as any[]) {
         m.set(r.player_id, {
           player_id: r.player_id,
@@ -302,14 +355,21 @@ export function useLivePlayerStats(playerIds: string[]) {
           rebounds: r.rebounds,
           assists: r.assists,
         });
+        if (r.nba_games?.status === 'live' || r.nba_games?.status === 'halftime') hasLiveGame = true;
       }
+      // Stash on the map itself (cheap, avoids a second query-cache read in
+      // refetchInterval below) so the poll cadence can react to it.
+      (m as any).__hasLiveGame = hasLiveGame;
       return m;
     },
     enabled: playerIds.length > 0,
     refetchInterval: (query) => {
-      // Only poll at 1s when at least one player has a live game today
-      const map = query.state.data;
-      if (!map) return 30_000;
+      // Only poll at 1s when at least one player has a LIVE game right now.
+      // Previously this checked `!map` (truthy after the very first fetch,
+      // regardless of content), so it polled every second forever once
+      // loaded — even with zero live games. Check the actual live flag.
+      const map = query.state.data as any;
+      if (!map || !map.__hasLiveGame) return 30_000;
       return 1_000;
     },
   });

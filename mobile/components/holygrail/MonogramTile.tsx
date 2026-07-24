@@ -1,5 +1,6 @@
 import { View, Text } from 'react-native';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 // Holy Grail player identity tile. Square, rounded corners, brand-tinted bg,
 // initials in DM Sans semibold, jersey number badge in Plex Mono on the corner.
@@ -13,15 +14,16 @@ interface Props {
 }
 
 export function MonogramTile({ initials, jersey, size = 52, showJersey = true }: Props) {
+  const theme = useTheme();
   return (
     <View
       style={{
         width: size,
         height: size,
         borderRadius: Math.max(8, size * 0.22),
-        backgroundColor: HG.navySoft,
+        backgroundColor: theme.surfaceSunken,
         borderWidth: 1,
-        borderColor: HG.hairline,
+        borderColor: theme.hairline,
         alignItems: 'center',
         justifyContent: 'center',
         position: 'relative',
@@ -31,7 +33,7 @@ export function MonogramTile({ initials, jersey, size = 52, showJersey = true }:
         style={{
           fontFamily: FONT.sansBold,
           fontSize: Math.round(size * 0.32),
-          color: HG.ink,
+          color: theme.ink,
           letterSpacing: -0.3,
         }}
       >
@@ -44,8 +46,8 @@ export function MonogramTile({ initials, jersey, size = 52, showJersey = true }:
             position: 'absolute',
             right: -4,
             bottom: -4,
-            backgroundColor: HG.jet,
-            borderColor: HG.hairline,
+            backgroundColor: theme.bg,
+            borderColor: theme.hairline,
             borderWidth: 1,
             borderRadius: 6,
             paddingHorizontal: 5,
@@ -58,7 +60,7 @@ export function MonogramTile({ initials, jersey, size = 52, showJersey = true }:
             style={{
               fontFamily: FONT.monoBold,
               fontSize: Math.max(8, Math.round(size * 0.18)),
-              color: HG.sky,
+              color: theme.accent,
               letterSpacing: 0.3,
             }}
           >

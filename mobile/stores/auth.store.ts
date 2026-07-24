@@ -38,7 +38,12 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   signOut: async () => {
     await supabase.auth.signOut();
-    set({ session: null, user: null, profile: null, wallet: null });
+    // Mirror reset()'s isLoading/isInitialized so callers that use this
+    // store method directly (app/(tabs)/profile.tsx, app/settings.tsx use
+    // useAuthStore().signOut, not useAuth().signOut) land in a fully
+    // consistent state even before the global onAuthStateChange listener
+    // in hooks/useAuth.ts catches up.
+    set({ session: null, user: null, profile: null, wallet: null, isLoading: false, isInitialized: true });
   },
 
   reset: () =>

@@ -14,9 +14,10 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import {
-  HG, FONT, fmtPrice, fmtPct, fmtFP, fmtTime,
+  FONT, fmtPrice, fmtPct, fmtFP, fmtTime,
   priceDirectionColor, playerInitials,
 } from '@/lib/holygrail';
+import { useTheme, type Theme } from '@/lib/theme';
 import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
 import { Ticker, type TickerEntry } from '@/components/holygrail/Ticker';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
@@ -36,6 +37,7 @@ function greeting(name: string) {
 }
 
 export default function HomeScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const { profile, wallet } = useAuthStore();
   const [trendingRange, setTrendingRange] = useState<'1h' | '4h' | '24h' | '7d' | 'alltime'>('1h');
@@ -262,21 +264,21 @@ export default function HomeScreen() {
   const completedGames = games.filter((g: any) => ['final', 'completed'].includes(g.status));
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       <ScreenHeader walletBalance={wallet?.balance} />
       <Ticker entries={tickerEntries} />
 
       <ScrollView
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.accent} />}
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
       >
         {/* â”€â”€ Greeting + Stats Row â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <View style={{ paddingHorizontal: 18, paddingTop: 20, paddingBottom: 4 }}>
-          <Text style={{ fontFamily: FONT.serif, fontSize: 28, color: HG.ink, letterSpacing: -0.4 }}>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 28, color: theme.ink, letterSpacing: -0.4 }}>
             {greeting(profile?.display_name ?? profile?.username ?? 'Baller')}
           </Text>
-          <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, marginTop: 2 }}>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, marginTop: 2 }}>
             {games.length > 0
               ? `${liveGames.length > 0 ? `${liveGames.length} game${liveGames.length > 1 ? 's' : ''} live Â· ` : ''}${upcomingGames.length} upcoming tonight`
               : 'No games tonight'}
@@ -286,20 +288,23 @@ export default function HomeScreen() {
         {/* Stats row */}
         <View style={{ flexDirection: 'row', paddingHorizontal: 18, marginTop: 14, gap: 8 }}>
           <StatPill
+            theme={theme}
             label="Balance"
             value={fmtPrice(wallet?.balance ?? 0)}
-            accent={HG.sky}
+            accent={theme.accent}
             onPress={() => router.push('/wallet' as any)}
           />
           <StatPill
+            theme={theme}
             label="Record"
             value={`${record?.wins ?? 0}W Â· ${record?.losses ?? 0}L`}
-            accent={HG.up}
+            accent={theme.up}
           />
           <StatPill
+            theme={theme}
             label="Earnings"
             value={fmtPrice(record?.earnings ?? 0)}
-            accent={(record?.earnings ?? 0) >= 0 ? HG.up : HG.down}
+            accent={(record?.earnings ?? 0) >= 0 ? theme.up : theme.down}
           />
         </View>
 
@@ -310,21 +315,21 @@ export default function HomeScreen() {
             style={{
               marginHorizontal: 18, marginTop: 12,
               paddingHorizontal: 16, paddingVertical: 12,
-              backgroundColor: HG.up + '14', borderRadius: 14,
-              borderWidth: 1, borderColor: HG.up + '33',
+              backgroundColor: theme.up + '14', borderRadius: 14,
+              borderWidth: 1, borderColor: theme.up + '33',
               flexDirection: 'row', alignItems: 'center', gap: 10,
             }}
           >
             <Text style={{ fontSize: 16 }}>ðŸŽ</Text>
             <View style={{ flex: 1 }}>
-              <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.2, color: HG.up, textTransform: 'uppercase' }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.2, color: theme.up, textTransform: 'uppercase' }}>
                 Promo Credit Available
               </Text>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.ink, marginTop: 2 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: theme.ink, marginTop: 2 }}>
                 {fmtPrice(promoCredit.credit_amount)}{promoCredit.expires_at ? ` Â· expires ${new Date(promoCredit.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
               </Text>
             </View>
-            <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={HG.up} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke={theme.up} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="m9 18 6-6-6-6" />
             </Svg>
           </Pressable>
@@ -333,35 +338,40 @@ export default function HomeScreen() {
         {/* â”€â”€ Active / Pending matchup card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         {activeMatchup && (
           <Pressable
-            onPress={() => router.push(activeMatchup.status === 'pending' ? '/matchup/create' as any : `/matchup/${activeMatchup.id}` as any)}
+            // Route to the real matchup detail screen regardless of status — it
+            // already renders a graceful "IN QUEUE" state for `pending` matchups
+            // (no opponent matched yet). Routing to /matchup/create here was a
+            // dead end: once an order is placed the lineup's status is no longer
+            // `building`, so that screen just shows "No lineup ready".
+            onPress={() => router.push(`/matchup/${activeMatchup.id}` as any)}
             style={{
               marginHorizontal: 18, marginTop: 14,
               padding: 18,
-              backgroundColor: HG.surface,
+              backgroundColor: theme.surface,
               borderRadius: 18,
               borderWidth: 1,
-              borderColor: activeMatchup.status === 'pending' ? HG.skyEdge : HG.sky + '55',
+              borderColor: activeMatchup.status === 'pending' ? theme.accentEdge : theme.accent + '55',
               overflow: 'hidden',
             }}
           >
             {activeMatchup.status === 'pending' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: HG.muted }} />
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.muted }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.2, color: HG.muted, textTransform: 'uppercase' }}>
+                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.2, color: theme.muted, textTransform: 'uppercase' }}>
                     Searching for opponent
                   </Text>
-                  <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.ink2, marginTop: 2 }}>
+                  <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.ink2, marginTop: 2 }}>
                     Wager {fmtPrice(activeMatchup.settled_wager ?? activeMatchup.pot_amount)} Â· In queue
                   </Text>
                 </View>
-                <ActivityIndicator size="small" color={HG.sky} />
+                <ActivityIndicator size="small" color={theme.accent} />
               </View>
             ) : (
               <>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: HG.sky }} />
-                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.4, color: HG.sky, textTransform: 'uppercase' }}>
+                  <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent }} />
+                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.4, color: theme.accent, textTransform: 'uppercase' }}>
                     {activeMatchup.status === 'matched' ? 'Matchup Confirmed' : 'Live Matchup'}
                   </Text>
                 </View>
@@ -375,17 +385,17 @@ export default function HomeScreen() {
                     );
                     return (
                       <View key={label} style={{ alignItems: i === 0 ? 'flex-start' : 'flex-end', flex: 1 }}>
-                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
-                        <Text style={{ fontFamily: FONT.hero, fontSize: 48, color: HG.ink, lineHeight: 52, marginTop: 2 }}>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1, textTransform: 'uppercase' }}>{label}</Text>
+                        <Text style={{ fontFamily: FONT.hero, fontSize: 48, color: theme.ink, lineHeight: 52, marginTop: 2 }}>
                           {score.toFixed(1)}
                         </Text>
                       </View>
                     );
                   })}
                   <View style={{ paddingHorizontal: 16, alignItems: 'center' }}>
-                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted }}>vs</Text>
-                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.sky, marginTop: 4 }}>{fmtPrice(activeMatchup.pot_amount)}</Text>
-                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 0.8, textTransform: 'uppercase' }}>pot</Text>
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted }}>vs</Text>
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.accent, marginTop: 4 }}>{fmtPrice(activeMatchup.pot_amount)}</Text>
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 0.8, textTransform: 'uppercase' }}>pot</Text>
                   </View>
                 </View>
               </>
@@ -399,14 +409,14 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/lineup' as any)}
             style={{
               flex: 1, height: 52, borderRadius: 14,
-              backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center',
               flexDirection: 'row', gap: 8,
             }}
           >
-            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={HG.jet} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={theme.onAccent} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M12 5v14M5 12h14" />
             </Svg>
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.2, textTransform: 'uppercase' }}>
               Build Lineup
             </Text>
           </Pressable>
@@ -414,16 +424,16 @@ export default function HomeScreen() {
             onPress={() => router.push('/(tabs)/matchups' as any)}
             style={{
               flex: 1, height: 52, borderRadius: 14,
-              backgroundColor: HG.surface, alignItems: 'center', justifyContent: 'center',
-              borderWidth: 1, borderColor: HG.hairline2,
+              backgroundColor: theme.surface, alignItems: 'center', justifyContent: 'center',
+              borderWidth: 1, borderColor: theme.hairline2,
               flexDirection: 'row', gap: 8,
             }}
           >
-            <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <Svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke={theme.ink2} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <Path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
               <Path d="M13.73 21a2 2 0 0 1-3.46 0" />
             </Svg>
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.ink2, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.ink2, letterSpacing: 1.2, textTransform: 'uppercase' }}>
               My Matchups
             </Text>
           </Pressable>
@@ -433,12 +443,12 @@ export default function HomeScreen() {
         <View style={{ marginTop: 28 }}>
           <View style={{ paddingHorizontal: 18, marginBottom: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>
                 Tonight's Games
               </Text>
-              <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: HG.ink, marginTop: 1 }}>
+              <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: theme.ink, marginTop: 1 }}>
                 {liveGames.length > 0 ? (
-                  <><Text style={{ color: HG.sky }}>{liveGames.length} Live</Text>{upcomingGames.length > 0 ? ` Â· ${upcomingGames.length} upcoming` : ''}</>
+                  <><Text style={{ color: theme.accent }}>{liveGames.length} Live</Text>{upcomingGames.length > 0 ? ` Â· ${upcomingGames.length} upcoming` : ''}</>
                 ) : (
                   `${games.length} ${games.length === 1 ? 'game' : 'games'}`
                 )}
@@ -447,9 +457,9 @@ export default function HomeScreen() {
             {games.length > 0 && (
               <Pressable
                 onPress={() => router.push('/(tabs)/lineup' as any)}
-                style={{ paddingHorizontal: 14, height: 32, borderRadius: 999, backgroundColor: HG.skySoft, borderWidth: 1, borderColor: HG.skyEdge, alignItems: 'center', justifyContent: 'center' }}
+                style={{ paddingHorizontal: 14, height: 32, borderRadius: 999, backgroundColor: theme.accentSoft, borderWidth: 1, borderColor: theme.accentEdge, alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: HG.sky, letterSpacing: 1.2, textTransform: 'uppercase' }}>
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: theme.accent, letterSpacing: 1.2, textTransform: 'uppercase' }}>
                   Pick Players
                 </Text>
               </Pressable>
@@ -457,16 +467,16 @@ export default function HomeScreen() {
           </View>
 
           {isLoading ? (
-            <View style={{ padding: 40, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
+            <View style={{ padding: 40, alignItems: 'center' }}><ActivityIndicator color={theme.accent} /></View>
           ) : games.length === 0 ? (
-            <View style={{ marginHorizontal: 18, padding: 24, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1, alignItems: 'center' }}>
-              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, textAlign: 'center' }}>No games scheduled tonight.</Text>
+            <View style={{ marginHorizontal: 18, padding: 24, backgroundColor: theme.surface, borderRadius: 16, borderColor: theme.hairline, borderWidth: 1, alignItems: 'center' }}>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, textAlign: 'center' }}>No games scheduled tonight.</Text>
             </View>
           ) : (
             <View style={{ paddingHorizontal: 18, gap: 8 }}>
-              {liveGames.map((g: any) => <GameCard key={g.id} game={g} onPress={() => router.push('/(tabs)/lineup' as any)} />)}
-              {upcomingGames.map((g: any) => <GameCard key={g.id} game={g} onPress={() => router.push('/(tabs)/lineup' as any)} />)}
-              {completedGames.map((g: any) => <GameCard key={g.id} game={g} onPress={() => router.push('/(tabs)/lineup' as any)} />)}
+              {liveGames.map((g: any) => <GameCard key={g.id} game={g} theme={theme} onPress={() => router.push('/(tabs)/lineup' as any)} />)}
+              {upcomingGames.map((g: any) => <GameCard key={g.id} game={g} theme={theme} onPress={() => router.push('/(tabs)/lineup' as any)} />)}
+              {completedGames.map((g: any) => <GameCard key={g.id} game={g} theme={theme} onPress={() => router.push('/(tabs)/lineup' as any)} />)}
             </View>
           )}
         </View>
@@ -476,8 +486,8 @@ export default function HomeScreen() {
           <View style={{ marginTop: 28 }}>
             <View style={{ paddingHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
               <View>
-                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>Trending</Text>
-                <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: HG.ink, marginTop: 1 }}>
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>Trending</Text>
+                <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: theme.ink, marginTop: 1 }}>
                   Players
                 </Text>
               </View>
@@ -490,12 +500,12 @@ export default function HomeScreen() {
                       onPress={() => setTrendingRange(option.key)}
                       style={{
                         height: 28, paddingHorizontal: 12, borderRadius: 999,
-                        backgroundColor: active ? HG.skySoft : HG.surface,
-                        borderWidth: 1, borderColor: active ? HG.skyEdge : HG.hairline,
+                        backgroundColor: active ? theme.accentSoft : theme.surface,
+                        borderWidth: 1, borderColor: active ? theme.accentEdge : theme.hairline,
                         alignItems: 'center', justifyContent: 'center',
                       }}
                     >
-                      <Text style={{ fontFamily: active ? FONT.monoBold : FONT.monoMedium, fontSize: 10, letterSpacing: 0.7, color: active ? HG.sky : HG.muted }}>
+                      <Text style={{ fontFamily: active ? FONT.monoBold : FONT.monoMedium, fontSize: 10, letterSpacing: 0.7, color: active ? theme.accent : theme.muted }}>
                         {option.label}
                       </Text>
                     </Pressable>
@@ -512,17 +522,17 @@ export default function HomeScreen() {
                   <Pressable
                     key={t.player_id}
                     onPress={() => router.push(`/player/${p.id}` as any)}
-                    style={{ width: 156, padding: 14, backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.hairline, gap: 12 }}
+                    style={{ width: 156, padding: 14, backgroundColor: theme.surface, borderRadius: 16, borderWidth: 1, borderColor: theme.hairline, gap: 12 }}
                   >
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                       <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={38} />
                       <View style={{ flex: 1 }}>
-                        <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>{p.full_name}</Text>
-                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, marginTop: 1 }}>{p.team_abbreviation} Â· {p.position}</Text>
+                        <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.ink }}>{p.full_name}</Text>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, marginTop: 1 }}>{p.team_abbreviation} Â· {p.position}</Text>
                       </View>
                     </View>
                     <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: HG.ink }}>{fmtPrice(t.current_price)}</Text>
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: theme.ink }}>{fmtPrice(t.current_price)}</Text>
                       <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, backgroundColor: color + '18' }}>
                         <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color, letterSpacing: 0.4 }}>{fmtPct(pct)}</Text>
                       </View>
@@ -538,6 +548,7 @@ export default function HomeScreen() {
         {data?.breakout && (
           <BreakoutHero
             row={data.breakout}
+            theme={theme}
             onPress={() => router.push(`/player/${(data.breakout as any).nba_players.id}` as any)}
           />
         )}
@@ -546,8 +557,8 @@ export default function HomeScreen() {
         {recentResults && recentResults.length > 0 && (
           <View style={{ marginTop: 28 }}>
             <View style={{ paddingHorizontal: 18, marginBottom: 12 }}>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>Recent Results</Text>
-              <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: HG.ink, marginTop: 1 }}>My Matchups</Text>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase' }}>Recent Results</Text>
+              <Text style={{ fontFamily: FONT.serif, fontSize: 22, color: theme.ink, marginTop: 1 }}>My Matchups</Text>
             </View>
             <View style={{ paddingHorizontal: 18, gap: 8 }}>
               {recentResults.map((m: any) => {
@@ -559,29 +570,29 @@ export default function HomeScreen() {
                     key={m.id}
                     onPress={() => router.push(`/matchup/${m.id}` as any)}
                     style={{
-                      padding: 16, backgroundColor: HG.surface, borderRadius: 14,
-                      borderWidth: 1, borderColor: won ? HG.up + '33' : tied ? HG.hairline : HG.loss,
+                      padding: 16, backgroundColor: theme.surface, borderRadius: 14,
+                      borderWidth: 1, borderColor: won ? theme.up + '33' : tied ? theme.hairline : theme.loss,
                       flexDirection: 'row', alignItems: 'center', gap: 12,
                     }}
                   >
                     <View style={{
                       width: 36, height: 36, borderRadius: 10,
-                      backgroundColor: won ? HG.up + '18' : tied ? HG.surface : HG.surfaceRaised,
+                      backgroundColor: won ? theme.up + '18' : tied ? theme.surface : theme.surfaceRaised,
                       alignItems: 'center', justifyContent: 'center',
                     }}>
                       <Text style={{ fontSize: 16 }}>{won ? 'ðŸ†' : tied ? 'ðŸ¤' : 'ðŸ’€'}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>
+                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.ink }}>
                         vs {opp?.display_name ?? opp?.username ?? 'Opponent'}
                       </Text>
-                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, marginTop: 2 }}>
+                      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, marginTop: 2 }}>
                         {won ? `+${fmtPrice(Number(m.payout_amount) - Number(m.settled_wager))}` : tied ? 'Tie' : `-${fmtPrice(m.settled_wager)}`}
                         {m.completed_at ? ` Â· ${new Date(m.completed_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}` : ''}
                       </Text>
                     </View>
-                    <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: won ? HG.up + '18' : tied ? HG.surface : HG.surfaceRaised }}>
-                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: won ? HG.up : HG.muted, letterSpacing: 0.6, textTransform: 'uppercase' }}>
+                    <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 6, backgroundColor: won ? theme.up + '18' : tied ? theme.surface : theme.surfaceRaised }}>
+                      <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: won ? theme.up : theme.muted, letterSpacing: 0.6, textTransform: 'uppercase' }}>
                         {won ? 'Win' : tied ? 'Tie' : 'Loss'}
                       </Text>
                     </View>
@@ -592,7 +603,7 @@ export default function HomeScreen() {
                 onPress={() => router.push('/(tabs)/matchups' as any)}
                 style={{ alignItems: 'center', paddingVertical: 10 }}
               >
-                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.sky, letterSpacing: 1, textTransform: 'uppercase' }}>
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.accent, letterSpacing: 1, textTransform: 'uppercase' }}>
                   View All Matchups â†’
                 </Text>
               </Pressable>
@@ -607,18 +618,18 @@ export default function HomeScreen() {
 // =============================================================================
 // STAT PILL
 // =============================================================================
-function StatPill({ label, value, accent, onPress }: { label: string; value: string; accent: string; onPress?: () => void }) {
+function StatPill({ label, value, accent, onPress, theme }: { label: string; value: string; accent: string; onPress?: () => void; theme: Theme }) {
   return (
     <Pressable
       onPress={onPress}
       style={{
         flex: 1, paddingVertical: 12, paddingHorizontal: 14,
-        backgroundColor: HG.surface, borderRadius: 14,
-        borderWidth: 1, borderColor: HG.hairline,
+        backgroundColor: theme.surface, borderRadius: 14,
+        borderWidth: 1, borderColor: theme.hairline,
         alignItems: 'center',
       }}
     >
-      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>{label}</Text>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>{label}</Text>
       <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: accent, letterSpacing: 0.4 }}>{value}</Text>
     </Pressable>
   );
@@ -627,7 +638,7 @@ function StatPill({ label, value, accent, onPress }: { label: string; value: str
 // =============================================================================
 // GAME CARD â€” improved with full team names & score layout
 // =============================================================================
-function GameCard({ game, onPress }: { game: any; onPress: () => void }) {
+function GameCard({ game, onPress, theme }: { game: any; onPress: () => void; theme: Theme }) {
   const isLive = game.status === 'live';
   const isFinal = ['final', 'completed'].includes(game.status);
   const hasScore = (isLive || isFinal) && game.home_score != null && game.away_score != null;
@@ -640,32 +651,32 @@ function GameCard({ game, onPress }: { game: any; onPress: () => void }) {
     <Pressable
       onPress={onPress}
       style={{
-        padding: 0, backgroundColor: HG.surface, borderRadius: 16,
-        borderColor: isLive ? HG.sky + '44' : HG.hairline, borderWidth: 1,
+        padding: 0, backgroundColor: theme.surface, borderRadius: 16,
+        borderColor: isLive ? theme.accent + '44' : theme.hairline, borderWidth: 1,
         overflow: 'hidden',
       }}
     >
       {/* Status bar */}
       <View style={{
         paddingHorizontal: 14, paddingVertical: 7,
-        backgroundColor: isLive ? HG.sky + '14' : HG.surfaceRaised,
+        backgroundColor: isLive ? theme.accent + '14' : theme.surfaceRaised,
         flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        borderBottomWidth: 1, borderBottomColor: HG.hairline,
+        borderBottomWidth: 1, borderBottomColor: theme.hairline,
       }}>
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.4, textTransform: 'uppercase' }}>
           NBA - {game.game_date}
         </Text>
         {isLive ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: HG.sky }} />
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: HG.sky, letterSpacing: 1 }}>
+            <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: theme.accent }} />
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: theme.accent, letterSpacing: 1 }}>
               LIVE Q{game.period}{game.game_clock ? ` ${game.game_clock}` : ''}
             </Text>
           </View>
         ) : isFinal ? (
-          <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: HG.muted, letterSpacing: 1 }}>FINAL</Text>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: theme.muted, letterSpacing: 1 }}>FINAL</Text>
         ) : (
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 0.8 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 0.8 }}>
             {fmtTime(game.tip_off_time)}
           </Text>
         )}
@@ -681,19 +692,19 @@ function GameCard({ game, onPress }: { game: any; onPress: () => void }) {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <View style={{
                 width: 32, height: 32, borderRadius: 8,
-                backgroundColor: HG.surfaceRaised,
+                backgroundColor: theme.surfaceRaised,
                 alignItems: 'center', justifyContent: 'center',
-                borderWidth: 1, borderColor: HG.hairline,
+                borderWidth: 1, borderColor: theme.hairline,
               }}>
-                <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: HG.ink, letterSpacing: 0.4 }}>
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, color: theme.ink, letterSpacing: 0.4 }}>
                   {team.abbr}
                 </Text>
               </View>
               <View>
-                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: team.won ? HG.ink : isFinal ? HG.muted : HG.ink }}>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: team.won ? theme.ink : isFinal ? theme.muted : theme.ink }}>
                   {team.abbr ?? 'â€”'}
                 </Text>
-                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted2, marginTop: 1 }}>
+                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted2, marginTop: 1 }}>
                   {i === 0 ? 'Away' : 'Home'}
                 </Text>
               </View>
@@ -701,7 +712,7 @@ function GameCard({ game, onPress }: { game: any; onPress: () => void }) {
             {hasScore && (
               <Text style={{
                 fontFamily: team.won ? FONT.monoBold : FONT.monoMedium,
-                fontSize: 22, color: team.won ? HG.ink : HG.muted,
+                fontSize: 22, color: team.won ? theme.ink : theme.muted,
                 letterSpacing: -0.5,
               }}>
                 {team.score}
@@ -714,8 +725,8 @@ function GameCard({ game, onPress }: { game: any; onPress: () => void }) {
       {/* Pick players button */}
       {!isFinal && (
         <View style={{ paddingHorizontal: 14, paddingBottom: 14 }}>
-          <View style={{ height: 1, backgroundColor: HG.hairline, marginBottom: 10 }} />
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.sky, letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>
+          <View style={{ height: 1, backgroundColor: theme.hairline, marginBottom: 10 }} />
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.accent, letterSpacing: 1, textTransform: 'uppercase', textAlign: 'center' }}>
             Tap to pick players â†’
           </Text>
         </View>
@@ -727,30 +738,30 @@ function GameCard({ game, onPress }: { game: any; onPress: () => void }) {
 // =============================================================================
 // BREAKOUT HERO
 // =============================================================================
-function BreakoutHero({ row, onPress }: { row: any; onPress: () => void }) {
+function BreakoutHero({ row, onPress, theme }: { row: any; onPress: () => void; theme: Theme }) {
   const p = row.nba_players;
   return (
     <Pressable
       onPress={onPress}
-      style={{ marginHorizontal: 18, marginTop: 28, marginBottom: 4, padding: 22, borderRadius: 20, backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, overflow: 'hidden' }}
+      style={{ marginHorizontal: 18, marginTop: 28, marginBottom: 4, padding: 22, borderRadius: 20, backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline, overflow: 'hidden' }}
     >
-      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 14 }}>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 14 }}>
         Yesterday's Top Performer
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16, marginBottom: 20 }}>
         <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={60} />
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, lineHeight: 28, letterSpacing: -0.4 }}>{p.full_name}</Text>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.sky, letterSpacing: 0.6, marginTop: 4 }}>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink, lineHeight: 28, letterSpacing: -0.4 }}>{p.full_name}</Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.accent, letterSpacing: 0.6, marginTop: 4 }}>
             {p.team_abbreviation} Â· {p.position}
           </Text>
         </View>
         <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ fontFamily: FONT.hero, fontSize: 52, color: HG.ink, lineHeight: 56 }}>{fmtFP(row.fantasy_points)}</Text>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1, textTransform: 'uppercase' }}>FPTS</Text>
+          <Text style={{ fontFamily: FONT.hero, fontSize: 52, color: theme.ink, lineHeight: 56 }}>{fmtFP(row.fantasy_points)}</Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1, textTransform: 'uppercase' }}>FPTS</Text>
         </View>
       </View>
-      <View style={{ flexDirection: 'row', gap: 0, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: HG.hairline }}>
+      <View style={{ flexDirection: 'row', gap: 0, borderRadius: 12, overflow: 'hidden', borderWidth: 1, borderColor: theme.hairline }}>
         {[
           { label: 'PTS', value: row.points ?? 0 },
           { label: 'REB', value: row.rebounds ?? 0 },
@@ -762,12 +773,12 @@ function BreakoutHero({ row, onPress }: { row: any; onPress: () => void }) {
             key={stat.label}
             style={{
               flex: 1, paddingVertical: 10, alignItems: 'center',
-              backgroundColor: i % 2 === 0 ? HG.surfaceRaised : HG.surface,
-              borderLeftWidth: i === 0 ? 0 : 1, borderLeftColor: HG.hairline,
+              backgroundColor: i % 2 === 0 ? theme.surfaceRaised : theme.surface,
+              borderLeftWidth: i === 0 ? 0 : 1, borderLeftColor: theme.hairline,
             }}
           >
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: HG.ink }}>{stat.value}</Text>
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1, textTransform: 'uppercase', marginTop: 3 }}>{stat.label}</Text>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: theme.ink }}>{stat.value}</Text>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1, textTransform: 'uppercase', marginTop: 3 }}>{stat.label}</Text>
           </View>
         ))}
       </View>

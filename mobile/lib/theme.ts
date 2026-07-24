@@ -13,6 +13,7 @@
 // =============================================================================
 
 import { useColorScheme } from 'react-native';
+import { useThemeStore } from '@/stores/theme.store';
 
 export type Mode = 'light' | 'dark';
 
@@ -139,10 +140,15 @@ export const DARK: Theme = {
 export const THEME: Record<Mode, Theme> = { light: LIGHT, dark: DARK };
 
 /**
- * Resolve the active theme from the OS color scheme. Defaults to dark when the
- * scheme is unavailable (matches the app's historical dark-only baseline).
+ * Resolve the active theme. Honors the user's manual Settings > Appearance
+ * override (light/dark) when set; otherwise follows the OS color scheme,
+ * defaulting to dark when that's unavailable (matches the app's historical
+ * dark-only baseline).
  */
 export function useTheme(): Theme {
+  const preference = useThemeStore((s) => s.preference);
   const scheme = useColorScheme();
+  if (preference === 'light') return LIGHT;
+  if (preference === 'dark') return DARK;
   return scheme === 'light' ? LIGHT : DARK;
 }

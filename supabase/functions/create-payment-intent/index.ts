@@ -71,6 +71,44 @@ Deno.serve(async (req) => {
     return resp(403, { error: 'user is not eligible to deposit' });
   }
 
+  // BUG FIX: this file's own header comment says "we validate the user, RG
+  // limits, and KYC state" but only user_can_play() (self-exclusion + state
+  // restrictions) was ever actually checked — set_deposit_limit() lets a user
+  // configure daily/weekly/monthly caps, but nothing anywhere enforced them,
+  // so a self-imposed responsible-gaming deposit limit was silently a no-op.
+  // Enforce it here, before a PaymentIntent (and a real Stripe charge) exists.
+  const { data: rg } = await svc
+    .from('responsible_gaming_settings')
+    .select('daily_deposit_limit, weekly_deposit_limit, monthly_deposit_limit')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (rg) {
+    const windows: Array<{ limit: number | null; label: string; sinceMs: number }> = [
+      { limit: rg.daily_deposit_limit,   label: 'daily',   sinceMs: 24 * 3600 * 1000 },
+      { limit: rg.weekly_deposit_limit,  label: 'weekly',  sinceMs: 7 * 24 * 3600 * 1000 },
+      { limit: rg.monthly_deposit_limit, label: 'monthly', sinceMs: 30 * 24 * 3600 * 1000 },
+    ];
+    for (const w of windows) {
+      if (w.limit == null) continue;
+      const since = new Date(Date.now() - w.sinceMs).toISOString();
+      const { data: rows } = await svc
+        .from('transactions')
+        .select('amount')
+        .eq('user_id', user.id)
+        .eq('type', 'deposit')
+        .eq('status', 'completed')
+        .gte('created_at', since);
+      const priorTotal = (rows ?? []).reduce((s, r: any) => s + Number(r.amount), 0);
+      if (priorTotal + amount > Number(w.limit)) {
+        return resp(403, {
+          error: 'deposit_limit_exceeded',
+          message: `This deposit would exceed your ${w.label} deposit limit of $${Number(w.limit).toFixed(2)}.`,
+        });
+      }
+    }
+  }
+
   // Get or create the Stripe customer for this user.
   const { data: profile } = await svc
     .from('profiles')

@@ -34,7 +34,8 @@ import { VT323_400Regular } from '@expo-google-fonts/vt323';
 import { useAuth } from '@/hooks/useAuth';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { initSentry, captureError } from '@/lib/sentry';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 // Prevent auto-hide so we can show the splash until fonts are ready.
 SplashScreen.preventAutoHideAsync().catch(() => {});
@@ -58,6 +59,7 @@ const queryClient = new QueryClient({
 });
 
 function RootLayoutNav() {
+  const theme = useTheme();
   const { session, profile, isInitialized } = useAuth();
   const segments = useSegments();
   const router = useRouter();
@@ -81,20 +83,31 @@ function RootLayoutNav() {
     if (!isInitialized) return;
 
     const inAuthGroup = segments[0] === '(auth)';
+    // reset-password and callback drive their own post-auth navigation (see
+    // those two screens). Both legitimately establish/refresh a session while
+    // still inside the (auth) group — a password-recovery link sets a session
+    // via callback.tsx specifically so it can forward to reset-password, and
+    // an already-onboarded existing user hitting either of those screens
+    // would otherwise get raced: this effect would see `session &&
+    // inAuthGroup` and force `router.replace('/(tabs)/home')` the instant the
+    // session updates, stomping the screen's own navigation and making
+    // password reset unreachable for any existing user. Skipping the bounce
+    // here leaves both screens free to route themselves once they're done.
+    const ownsNavigation = segments[1] === 'reset-password' || segments[1] === 'callback';
 
     if (!session && !inAuthGroup) {
       router.replace('/(auth)/login');
-    } else if (session && inAuthGroup) {
+    } else if (session && inAuthGroup && !ownsNavigation) {
       if (!profile?.username) {
         router.replace('/(auth)/onboarding');
       } else {
         router.replace('/(tabs)/home');
       }
     }
-  }, [session, profile, isInitialized]);
+  }, [session, profile, isInitialized, segments]);
 
   return (
-    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: HG.jet } }}>
+    <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.bg } }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="wallet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
@@ -114,6 +127,8 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
+  const theme = useTheme();
+
   // Holy Grail V2 type stack — DM Sans (UI), DM Serif Display (headlines),
   // IBM Plex Mono (every number, ticker, timestamp).
   const [fontsLoaded] = useFonts({
@@ -136,22 +151,22 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
-  // While fonts boot, show a Holy Grail-themed black screen instead of the
-  // default white flash. Avoids the 1-frame light-mode glitch on cold start.
+  // While fonts boot, show a theme-matched screen instead of the default
+  // white flash. Avoids the 1-frame light-mode glitch on cold start.
   if (!fontsLoaded) {
     return (
-      <View style={{ flex: 1, backgroundColor: HG.jet, alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontFamily: FONT.mono, color: HG.muted, fontSize: 11, letterSpacing: 2 }}>BETTHAT</Text>
+      <View style={{ flex: 1, backgroundColor: theme.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ fontFamily: FONT.mono, color: theme.muted, fontSize: 11, letterSpacing: 2 }}>BETTHAT</Text>
       </View>
     );
   }
 
   return (
     <ErrorBoundary>
-      <GestureHandlerRootView style={{ flex: 1, backgroundColor: HG.jet }}>
+      <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.bg }}>
         <SafeAreaProvider>
           <QueryClientProvider client={queryClient}>
-            <StatusBar style="light" />
+            <StatusBar style={theme.mode === 'light' ? 'dark' : 'light'} />
             <RootLayoutNav />
           </QueryClientProvider>
         </SafeAreaProvider>

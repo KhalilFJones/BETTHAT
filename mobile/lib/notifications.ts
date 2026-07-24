@@ -141,17 +141,32 @@ export function useNotificationRouting() {
     });
 
     // When user taps a notification (foreground, background, or killed).
+    // Kept in sync with app/notifications.tsx's in-app-list handlePress() —
+    // that switch covers every type in the `notifications_type_check`
+    // constraint; this one only handled matchup_*/friend_request/wallet and
+    // silently no-opped on friend_challenge, price_alert, and
+    // achievement_earned taps that arrived while the app was backgrounded
+    // or killed (the in-app list route worked; only the OS-tap path didn't).
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as Record<string, unknown>;
       const type = data?.type as string | undefined;
       const matchupId = data?.matchup_id as string | undefined;
+      const challengeId = data?.challenge_id as string | undefined;
+      const fromUserId = data?.from_user_id as string | undefined;
+      const playerId = data?.player_id as string | undefined;
 
-      if (matchupId && (type === 'matchup_chat' || type === 'matchup_score' || type === 'matchup_found')) {
+      if (type === 'friend_challenge' && challengeId) {
+        router.push(`/matchup/challenge/${challengeId}` as any);
+      } else if (matchupId && (type === 'matchup_chat' || type === 'matchup_score' || type === 'matchup_found' || type === 'game_starting' || type === 'game_final')) {
         router.push(`/matchup/${matchupId}` as any);
       } else if (type === 'friend_request') {
-        router.push('/friends' as any);
+        router.push(fromUserId ? (`/user/${fromUserId}` as any) : ('/friends' as any));
       } else if (type === 'deposit_confirmed' || type === 'withdrawal_processed') {
         router.push('/wallet' as any);
+      } else if (type === 'price_alert' && playerId) {
+        router.push(`/player/${playerId}` as any);
+      } else if (type === 'achievement_earned') {
+        router.push('/achievements' as any);
       }
     });
 

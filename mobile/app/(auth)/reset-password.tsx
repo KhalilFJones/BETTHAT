@@ -12,9 +12,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 export default function ResetPasswordScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -42,41 +44,41 @@ export default function ResetPasswordScreen() {
   }
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={{ flex: 1 }}
       >
         <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 48, gap: 0 }}>
           {/* Title */}
-          <Text style={{ fontFamily: FONT.serif, fontSize: 38, color: HG.ink, letterSpacing: -0.8, marginBottom: 8 }}>
+          <Text style={{ fontFamily: FONT.serif, fontSize: 38, color: theme.ink, letterSpacing: -0.8, marginBottom: 8 }}>
             New{'\n'}
-            <Text style={{ fontFamily: FONT.serifItalic, color: HG.sky }}>Password</Text>
+            <Text style={{ fontFamily: FONT.serifItalic, color: theme.accent }}>Password</Text>
           </Text>
-          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, marginBottom: 36, lineHeight: 20 }}>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.muted, marginBottom: 36, lineHeight: 20 }}>
             Choose a strong password for your BETTHAT account.
           </Text>
 
           {done ? (
-            <View style={{ padding: 20, backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.skyEdge, alignItems: 'center', gap: 10 }}>
-              <Text style={{ fontFamily: FONT.monoBold, fontSize: 18, color: HG.sky }}>✓</Text>
-              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: HG.ink }}>Password updated!</Text>
-              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted }}>Taking you home…</Text>
+            <View style={{ padding: 20, backgroundColor: theme.surface, borderRadius: 16, borderWidth: 1, borderColor: theme.accentEdge, alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 18, color: theme.accent }}>✓</Text>
+              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: theme.ink }}>Password updated!</Text>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted }}>Taking you home…</Text>
             </View>
           ) : (
             <>
               {/* New password */}
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
                 New Password
               </Text>
               <TextInput
                 style={{
-                  backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline,
+                  backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline,
                   borderRadius: 12, paddingHorizontal: 16, height: 52,
-                  fontFamily: FONT.sans, fontSize: 15, color: HG.ink, marginBottom: 18,
+                  fontFamily: FONT.sans, fontSize: 15, color: theme.ink, marginBottom: 18,
                 }}
                 placeholder="At least 8 characters"
-                placeholderTextColor={HG.muted}
+                placeholderTextColor={theme.muted}
                 secureTextEntry
                 value={password}
                 onChangeText={setPassword}
@@ -84,18 +86,18 @@ export default function ResetPasswordScreen() {
               />
 
               {/* Confirm password */}
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
                 Confirm Password
               </Text>
               <TextInput
                 style={{
-                  backgroundColor: HG.surface, borderWidth: 1,
-                  borderColor: confirm.length > 0 && confirm !== password ? HG.down + '88' : HG.hairline,
+                  backgroundColor: theme.surface, borderWidth: 1,
+                  borderColor: confirm.length > 0 && confirm !== password ? theme.danger + '88' : theme.hairline,
                   borderRadius: 12, paddingHorizontal: 16, height: 52,
-                  fontFamily: FONT.sans, fontSize: 15, color: HG.ink, marginBottom: 32,
+                  fontFamily: FONT.sans, fontSize: 15, color: theme.ink, marginBottom: 32,
                 }}
                 placeholder="Re-enter password"
-                placeholderTextColor={HG.muted}
+                placeholderTextColor={theme.muted}
                 secureTextEntry
                 value={confirm}
                 onChangeText={setConfirm}
@@ -107,15 +109,15 @@ export default function ResetPasswordScreen() {
                 disabled={loading || !password || !confirm}
                 style={{
                   height: 54, borderRadius: 999,
-                  backgroundColor: HG.sky,
+                  backgroundColor: theme.accent,
                   alignItems: 'center', justifyContent: 'center',
                   opacity: loading || !password || !confirm ? 0.4 : 1,
                 }}
               >
                 {loading ? (
-                  <ActivityIndicator color={HG.jet} />
+                  <ActivityIndicator color={theme.onAccent} />
                 ) : (
-                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.8, textTransform: 'uppercase' }}>
+                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.8, textTransform: 'uppercase' }}>
                     Update Password
                   </Text>
                 )}

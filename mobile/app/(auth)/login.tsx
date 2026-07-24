@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { Link } from 'expo-router';
 import { supabase } from '@/lib/supabase';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme, type Theme } from '@/lib/theme';
 import { OAuthButtons } from '@/components/OAuthButtons';
 
 // Sample ticker handles drift across the splash backdrop. Stationary, low-opacity.
@@ -22,6 +23,7 @@ const DRIFT_HANDLES = [
 ];
 
 export default function LoginScreen() {
+  const theme = useTheme();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -40,9 +42,9 @@ export default function LoginScreen() {
   }
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: HG.jet }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: theme.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       {/* Drifting ticker backdrop */}
-      <DriftingTickers />
+      <DriftingTickers theme={theme} />
 
       <ScrollView
         keyboardShouldPersistTaps="handled"
@@ -50,10 +52,10 @@ export default function LoginScreen() {
       >
         <View>
           {/* Brand wordmark */}
-          <Text style={{ fontFamily: FONT.monoBold, fontSize: 36, color: HG.ink, letterSpacing: 6, textAlign: 'center' }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 36, color: theme.ink, letterSpacing: 6, textAlign: 'center' }}>
             BETTHAT
           </Text>
-          <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
             Draft the market.
           </Text>
         </View>
@@ -63,51 +65,51 @@ export default function LoginScreen() {
           <OAuthButtons />
 
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8 }}>
-            <View style={{ flex: 1, height: 1, backgroundColor: HG.hairline }} />
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4 }}>OR EMAIL</Text>
-            <View style={{ flex: 1, height: 1, backgroundColor: HG.hairline }} />
+            <View style={{ flex: 1, height: 1, backgroundColor: theme.hairline }} />
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.4 }}>OR EMAIL</Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: theme.hairline }} />
           </View>
 
           {/* Email */}
           <View>
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
               Email
             </Text>
             <TextInput
               value={email}
               onChangeText={setEmail}
               placeholder="you@example.com"
-              placeholderTextColor={HG.muted}
+              placeholderTextColor={theme.muted}
               keyboardType="email-address"
               autoCapitalize="none"
               autoComplete="email"
-              style={inputStyle}
+              style={inputStyle(theme)}
             />
           </View>
 
           {/* Password */}
           <View>
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
               Password
             </Text>
             <TextInput
               value={password}
               onChangeText={setPassword}
               placeholder="••••••••"
-              placeholderTextColor={HG.muted}
+              placeholderTextColor={theme.muted}
               secureTextEntry
               autoComplete="password"
-              style={inputStyle}
+              style={inputStyle(theme)}
             />
           </View>
 
           {error ? (
-            <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.down }}>{error}</Text>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.danger }}>{error}</Text>
           ) : null}
 
           <Link href="/(auth)/forgot-password" asChild>
             <Pressable style={{ alignItems: 'flex-end' }}>
-              <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.sky }}>Forgot password?</Text>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.accent }}>Forgot password?</Text>
             </Pressable>
           </Link>
 
@@ -116,32 +118,32 @@ export default function LoginScreen() {
             disabled={loading}
             style={{
               height: 52, borderRadius: 999,
-              backgroundColor: HG.sky,
+              backgroundColor: theme.accent,
               alignItems: 'center', justifyContent: 'center',
               opacity: loading ? 0.7 : 1,
               marginTop: 4,
             }}
           >
             {loading ? (
-              <ActivityIndicator color={HG.jet} />
+              <ActivityIndicator color={theme.onAccent} />
             ) : (
-              <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.4, textTransform: 'uppercase' }}>
                 Sign in
               </Text>
             )}
           </Pressable>
 
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 4, marginTop: 8 }}>
-            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted }}>New here?</Text>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted }}>New here?</Text>
             <Link href="/(auth)/signup" asChild>
               <Pressable>
-                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.sky }}>Create account</Text>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.accent }}>Create account</Text>
               </Pressable>
             </Link>
           </View>
         </View>
 
-        <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: HG.muted2, textAlign: 'center', lineHeight: 17, marginTop: 40 }}>
+        <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.muted2, textAlign: 'center', lineHeight: 17, marginTop: 40 }}>
           Must be 18+ and in an eligible state to play.{'\n'}Real money wagering. Play responsibly.
         </Text>
       </ScrollView>
@@ -153,7 +155,7 @@ export default function LoginScreen() {
 // Drifting tickers — atmosphere only, no content lives in this layer.
 // =============================================================================
 
-function DriftingTickers() {
+function DriftingTickers({ theme }: { theme: Theme }) {
   // Generate 20 floating handles at random positions
   const handles = useRef(
     DRIFT_HANDLES.map((h, i) => ({
@@ -187,7 +189,7 @@ function DriftingTickers() {
         style={{
           position: 'absolute', top: -200, right: -150,
           width: 500, height: 500, borderRadius: 999,
-          backgroundColor: HG.sky, opacity: 0.05,
+          backgroundColor: theme.accent, opacity: 0.05,
         }}
       />
       {handles.map((h, i) => {
@@ -198,7 +200,7 @@ function DriftingTickers() {
             style={{ position: 'absolute', top: h.top, left: h.left, transform: [{ translateX: tx }], opacity: 0.13 }}
           >
             {/* V2.1 Amendment 1: Splash drifting tickers use the LED hero font */}
-            <Text style={{ fontFamily: FONT.hero, fontSize: 20, color: HG.sky, letterSpacing: 2 }}>
+            <Text style={{ fontFamily: FONT.hero, fontSize: 20, color: theme.accent, letterSpacing: 2 }}>
               {h.handle}
             </Text>
           </Animated.View>
@@ -208,14 +210,14 @@ function DriftingTickers() {
   );
 }
 
-const inputStyle = {
-  backgroundColor: HG.inputBg,
+const inputStyle = (theme: Theme) => ({
+  backgroundColor: theme.surfaceSunken,
   borderRadius: 14,
   paddingHorizontal: 16,
   paddingVertical: 14,
   fontFamily: FONT.sans,
   fontSize: 15,
-  color: HG.ink,
+  color: theme.ink,
   borderWidth: 1,
-  borderColor: HG.hairline,
-};
+  borderColor: theme.hairline,
+});

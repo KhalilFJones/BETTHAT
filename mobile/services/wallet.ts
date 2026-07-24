@@ -26,15 +26,24 @@ export async function createPaymentIntent(amount: number): Promise<PaymentIntent
     { body: { amount } },
   );
   if (error) {
-    // supabase-js stuffs non-2xx response bodies into FunctionsHttpError.context.
-    // Try to read the json body for a typed code.
+    // supabase-js stuffs non-2xx response bodies into FunctionsHttpError.context
+    // rather than error.message (which is a generic "non-2xx status code"
+    // string) — read the actual JSON body so specific server errors (deposit
+    // limit exceeded, RG ineligibility, amount out of range, etc.) reach the
+    // user instead of a meaningless generic message.
     const ctx: any = (error as any).context;
     let bodyText = '';
     try { bodyText = ctx?.body ? await ctx.body.text() : ''; } catch { /* noop */ }
     if (bodyText.includes('email_unverified')) {
       throw new EmailUnverifiedError();
     }
-    throw new Error(error.message);
+    // Not every error response has a friendly `message` (e.g. `{ error:
+    // 'user is not eligible to deposit' }` has none) — fall back to the
+    // `error` code itself before the generic supabase-js message, since even
+    // a raw code beats "Edge Function returned a non-2xx status code".
+    let parsed: { message?: string; error?: string } | undefined;
+    try { parsed = JSON.parse(bodyText); } catch { /* not JSON */ }
+    throw new Error(parsed?.message ?? parsed?.error ?? error.message);
   }
   if (!data) throw new Error('no response from create-payment-intent');
   if ((data as any).error === 'email_unverified') {

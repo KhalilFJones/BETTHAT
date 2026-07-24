@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { View, Text, Animated, Easing, Pressable } from 'react-native';
-import { HG, FONT, fmtPrice } from '@/lib/holygrail';
+import { FONT, fmtPrice } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 export interface TickerEntry {
   ticker: string;
@@ -20,6 +21,7 @@ interface Props {
 // pauses on press-and-hold. Content is duplicated and shifted by half the
 // total width to create a seamless loop.
 export function Ticker({ entries, speed = 32 }: Props) {
+  const theme = useTheme();
   const translateX = useRef(new Animated.Value(0)).current;
   const widthRef = useRef(0);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
@@ -56,10 +58,10 @@ export function Ticker({ entries, speed = 32 }: Props) {
       <View
         style={{
           height: 36,
-          backgroundColor: HG.surface,
+          backgroundColor: theme.surface,
           borderTopWidth: 1,
           borderBottomWidth: 1,
-          borderColor: HG.hairline,
+          borderColor: theme.hairline,
         }}
       />
     );
@@ -74,10 +76,10 @@ export function Ticker({ entries, speed = 32 }: Props) {
       onPressOut={startScroll}
       style={{
         height: 36,
-        backgroundColor: HG.surface,
+        backgroundColor: theme.surface,
         borderTopWidth: 1,
         borderBottomWidth: 1,
-        borderColor: HG.hairline,
+        borderColor: theme.hairline,
         overflow: 'hidden',
       }}
     >
@@ -98,13 +100,13 @@ export function Ticker({ entries, speed = 32 }: Props) {
         {doubled.map((t, i) => {
           const dir = t.pctChange >= 0 ? 'up' : 'down';
           const arrow = dir === 'up' ? '↑' : '↓';
-          const color = dir === 'up' ? HG.up : HG.down;
+          const color = dir === 'up' ? theme.up : theme.down;
           return (
             <View key={i} style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.sky, letterSpacing: 0.4 }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: theme.accent, letterSpacing: 0.4 }}>
                 {t.ticker}
               </Text>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.ink }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: theme.ink }}>
                 {fmtPrice(t.price)}
               </Text>
               <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color }}>

@@ -362,10 +362,15 @@ async function syncScoreboard(dateStr?: string): Promise<object> {
       }
     }
 
-    // When a game goes final, trigger the matchup settling sweep
+    // When a game goes final, trigger the matchup settling sweep. There's no
+    // dedicated settlement cron — this fire-and-forget call, retried
+    // implicitly every ~2min while this game stays "final" in later syncs, is
+    // the only path that settles matchups. A silently swallowed failure here
+    // was invisible in logs; at least surface it so a sustained outage is
+    // debuggable instead of just "matchups never settled, no idea why".
     if (isFinal) {
       try {
-        await fetch(`${SUPABASE_URL}/functions/v1/score-matchup`, {
+        const settleRes = await fetch(`${SUPABASE_URL}/functions/v1/score-matchup`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -373,7 +378,12 @@ async function syncScoreboard(dateStr?: string): Promise<object> {
           },
           body: JSON.stringify({}),
         });
-      } catch { /* non-fatal */ }
+        if (!settleRes.ok) {
+          console.error(`[sync-nba-data] score-matchup sweep failed: ${settleRes.status} ${await settleRes.text()}`);
+        }
+      } catch (e: any) {
+        console.error('[sync-nba-data] score-matchup sweep threw:', e?.message ?? e);
+      }
     }
 
     results.push({ event_id: espnEventId, game_id: gameUuid, status: gameStatus, players: playerCount });

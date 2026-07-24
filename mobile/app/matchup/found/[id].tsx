@@ -24,8 +24,9 @@ import Animated, {
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import {
-  HG, FONT, fmtPrice, opponentColor, playerInitials, playerLastName,
+  FONT, fmtPrice, opponentColor, playerInitials, playerLastName,
 } from '@/lib/holygrail';
+import { useTheme, type Theme } from '@/lib/theme';
 import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 // =============================================================================
@@ -33,6 +34,7 @@ import { MonogramTile } from '@/components/holygrail/MonogramTile';
 // =============================================================================
 
 export default function MatchFoundScreen() {
+  const theme = useTheme();
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { profile } = useAuthStore();
@@ -74,8 +76,8 @@ export default function MatchFoundScreen() {
 
   if (isLoading || !data) {
     return (
-      <SafeAreaView style={{ flex: 1, backgroundColor: HG.jet, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color={HG.sky} />
+      <SafeAreaView style={{ flex: 1, backgroundColor: theme.bg, alignItems: 'center', justifyContent: 'center' }}>
+        <ActivityIndicator color={theme.accent} />
       </SafeAreaView>
     );
   }
@@ -85,8 +87,12 @@ export default function MatchFoundScreen() {
   const opp = meIs1 ? data.u2 : data.u1;
   const myLineup = meIs1 ? data.l1 : data.l2;
   const oppLineup = meIs1 ? data.l2 : data.l1;
-  const myBid = Number(meIs1 ? data.user1_max_wager : data.user2_max_wager ?? 0);
-  const oppBid = Number(meIs1 ? data.user2_max_wager : data.user1_max_wager ?? 0);
+  // Parenthesized explicitly: `a ? b : c ?? 0` only applies the `?? 0`
+  // fallback to the else-branch (ternary binds looser than `??`), so the
+  // previous version showed "$NaN" / broke the slippage calc below whenever
+  // the true-branch field (e.g. user1_max_wager when meIs1) was null.
+  const myBid = Number((meIs1 ? data.user1_max_wager : data.user2_max_wager) ?? 0);
+  const oppBid = Number((meIs1 ? data.user2_max_wager : data.user1_max_wager) ?? 0);
   const settled = Number(data.settled_wager ?? 0);
   const slippage = myBid > settled ? myBid - settled : 0;
 
@@ -105,25 +111,25 @@ export default function MatchFoundScreen() {
   const tipoffSs = String(secsUntilTipoff % 60).padStart(2, '0');
 
   return (
-    <View style={{ flex: 1, backgroundColor: HG.jet }}>
-      <DiagonalSplit oppColor={oppAccent} />
+    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+      <DiagonalSplit theme={theme} oppColor={oppAccent} />
 
       <SafeAreaView edges={['top']} style={{ flex: 1 }}>
         {/* Top eyebrow */}
         <View style={{ paddingTop: 8, alignItems: 'center' }}>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: 'rgba(232,237,242,0.45)', letterSpacing: 2.5, textTransform: 'uppercase' }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, letterSpacing: 2.5, textTransform: 'uppercase' }}>
             Order · Filled
           </Text>
         </View>
 
         {/* Wager hero — VT323 LED scoreboard */}
         <View style={{ alignItems: 'center', paddingTop: 28 }}>
-          <WagerHero amount={settled} />
-          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.ink, marginTop: 10, letterSpacing: 0.2 }}>
-            You matched at <Text style={{ fontFamily: FONT.monoMedium, color: HG.ink }}>{fmtPrice(settled)}</Text>
+          <WagerHero theme={theme} amount={settled} />
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.ink, marginTop: 10, letterSpacing: 0.2 }}>
+            You matched at <Text style={{ fontFamily: FONT.monoMedium, color: theme.ink }}>{fmtPrice(settled)}</Text>
           </Text>
           {slippage > 0 ? (
-            <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted, marginTop: 6 }}>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.muted, marginTop: 6 }}>
               You bid <Text style={{ fontFamily: FONT.monoMedium }}>{fmtPrice(myBid)}</Text>
               {' · '}
               <Text style={{ fontFamily: FONT.monoMedium }}>{fmtPrice(slippage)}</Text> returned to wallet
@@ -133,29 +139,29 @@ export default function MatchFoundScreen() {
 
         {/* Fight-card strip */}
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 22, marginTop: 28 }}>
-          <FighterCorner profile={me} accent={HG.sky} align="left" />
-          <Text style={{ fontFamily: FONT.serifItalic, fontSize: 18, color: HG.muted, letterSpacing: 0.4 }}>vs</Text>
-          <FighterCorner profile={opp} accent={oppAccent} align="right" />
+          <FighterCorner theme={theme} profile={me} accent={theme.accent} align="left" />
+          <Text style={{ fontFamily: FONT.serifItalic, fontSize: 18, color: theme.muted, letterSpacing: 0.4 }}>vs</Text>
+          <FighterCorner theme={theme} profile={opp} accent={oppAccent} align="right" />
         </View>
 
         {/* Lineups */}
         <View style={{ flex: 1, flexDirection: 'row', paddingHorizontal: 16, marginTop: 36, gap: 12 }}>
-          <LineupColumn label="Your lineup" accent={HG.sky} lineup={myLineup} />
-          <LineupColumn label="Opponent" accent={oppAccent} lineup={oppLineup} />
+          <LineupColumn theme={theme} label="Your lineup" accent={theme.accent} lineup={myLineup} />
+          <LineupColumn theme={theme} label="Opponent" accent={oppAccent} lineup={oppLineup} />
         </View>
 
         {/* Bottom CTA */}
         <View style={{ paddingHorizontal: 18, paddingTop: 14, paddingBottom: 22, gap: 8 }}>
           {firstTipoff && !tipoffNear && !tipoffStarted ? (
             <>
-              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, textAlign: 'center', letterSpacing: 1.6, textTransform: 'uppercase' }}>
+              <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, textAlign: 'center', letterSpacing: 1.6, textTransform: 'uppercase' }}>
                 Tipoff in {tipoffMm}:{tipoffSs}
               </Text>
               <Pressable
                 onPress={() => router.replace(`/matchup/${data.id}` as any)}
-                style={{ height: 48, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center' }}
+                style={{ height: 48, borderRadius: 999, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.4, textTransform: 'uppercase' }}>
                   View matchup
                 </Text>
               </Pressable>
@@ -163,9 +169,9 @@ export default function MatchFoundScreen() {
           ) : (
             <Pressable
               onPress={() => router.replace(`/matchup/${data.id}` as any)}
-              style={{ height: 52, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center' }}
+              style={{ height: 52, borderRadius: 999, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center' }}
             >
-              <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.jet, letterSpacing: 1.6, textTransform: 'uppercase' }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: theme.onAccent, letterSpacing: 1.6, textTransform: 'uppercase' }}>
                 Open Live Board
               </Text>
             </Pressable>
@@ -182,7 +188,7 @@ export default function MatchFoundScreen() {
 // bottom-left, both fading to black at their outer edges and at the bottom.
 // =============================================================================
 
-function DiagonalSplit({ oppColor }: { oppColor: string }) {
+function DiagonalSplit({ theme, oppColor }: { theme: Theme; oppColor: string }) {
   // Use Reanimated to slide both halves in from opposite edges (300ms).
   const tx = useSharedValue(120);
   useEffect(() => {
@@ -197,9 +203,9 @@ function DiagonalSplit({ oppColor }: { oppColor: string }) {
         <Svg height="100%" width="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
           <Defs>
             <LinearGradient id="leftGrad" x1="0" y1="0" x2="1" y2="1">
-              <Stop offset="0" stopColor={HG.sky} stopOpacity="0.55" />
-              <Stop offset="0.6" stopColor={HG.sky} stopOpacity="0.18" />
-              <Stop offset="1" stopColor={HG.jet} stopOpacity="0.95" />
+              <Stop offset="0" stopColor={theme.accent} stopOpacity="0.55" />
+              <Stop offset="0.6" stopColor={theme.accent} stopOpacity="0.18" />
+              <Stop offset="1" stopColor={theme.bg} stopOpacity="0.95" />
             </LinearGradient>
           </Defs>
           {/* Left polygon: takes top-left corner + diagonal */}
@@ -212,20 +218,20 @@ function DiagonalSplit({ oppColor }: { oppColor: string }) {
             <LinearGradient id="rightGrad" x1="1" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={oppColor} stopOpacity="0.6" />
               <Stop offset="0.6" stopColor={oppColor} stopOpacity="0.2" />
-              <Stop offset="1" stopColor={HG.jet} stopOpacity="0.95" />
+              <Stop offset="1" stopColor={theme.bg} stopOpacity="0.95" />
             </LinearGradient>
           </Defs>
           {/* Right polygon: complements the left */}
           <Path d="M 70 0 L 100 0 L 100 100 L 30 100 Z" fill="url(#rightGrad)" />
         </Svg>
       </Animated.View>
-      {/* Bottom-of-split fade into jet for the lineup section */}
+      {/* Bottom-of-split fade into bg for the lineup section */}
       <View style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 80 }}>
         <Svg height="100%" width="100%" viewBox="0 0 1 1" preserveAspectRatio="none">
           <Defs>
             <LinearGradient id="bottomFade" x1="0" y1="0" x2="0" y2="1">
-              <Stop offset="0" stopColor={HG.jet} stopOpacity="0" />
-              <Stop offset="1" stopColor={HG.jet} stopOpacity="1" />
+              <Stop offset="0" stopColor={theme.bg} stopOpacity="0" />
+              <Stop offset="1" stopColor={theme.bg} stopOpacity="1" />
             </LinearGradient>
           </Defs>
           <Path d="M 0 0 L 1 0 L 1 1 L 0 1 Z" fill="url(#bottomFade)" />
@@ -239,7 +245,7 @@ function DiagonalSplit({ oppColor }: { oppColor: string }) {
 // WAGER HERO — VT323 scoreboard text with sequential character reveal
 // =============================================================================
 
-function WagerHero({ amount }: { amount: number }) {
+function WagerHero({ theme, amount }: { theme: Theme; amount: number }) {
   const text = '$' + Math.round(amount);
   const chars = text.split('');
 
@@ -276,11 +282,11 @@ function WagerHero({ amount }: { amount: number }) {
               {
                 fontFamily: FONT.hero,
                 fontSize: 132,
-                color: HG.sky,
+                color: theme.accent,
                 letterSpacing: 4,
                 lineHeight: 132,
                 // VT323 looks best with a slight glow shadow
-                textShadowColor: HG.sky,
+                textShadowColor: theme.accent,
                 textShadowOffset: { width: 0, height: 0 },
                 textShadowRadius: 16,
               },
@@ -299,7 +305,7 @@ function WagerHero({ amount }: { amount: number }) {
 // FIGHT-CARD CORNER
 // =============================================================================
 
-function FighterCorner({ profile, accent, align }: { profile: any; accent: string; align: 'left' | 'right' }) {
+function FighterCorner({ theme, profile, accent, align }: { theme: Theme; profile: any; accent: string; align: 'left' | 'right' }) {
   const wins = Number(profile?.total_wins ?? 0);
   const losses = Number(profile?.total_losses ?? 0);
   const total = wins + losses;
@@ -325,17 +331,17 @@ function FighterCorner({ profile, accent, align }: { profile: any; accent: strin
             borderRadius: 999,
             backgroundColor: accent,
             borderWidth: 2,
-            borderColor: HG.jet,
+            borderColor: theme.bg,
           }}
         />
       </View>
       <Text
         numberOfLines={1}
-        style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: HG.ink, marginTop: 8, letterSpacing: -0.2 }}
+        style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: theme.ink, marginTop: 8, letterSpacing: -0.2 }}
       >
         {username}
       </Text>
-      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: 'rgba(232,237,242,0.55)', marginTop: 2, letterSpacing: 0.4 }}>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, marginTop: 2, letterSpacing: 0.4 }}>
         {wins}–{losses} · {winRate}% WR
       </Text>
     </View>
@@ -346,7 +352,7 @@ function FighterCorner({ profile, accent, align }: { profile: any; accent: strin
 // LINEUP COLUMN — stagger-reveal rows
 // =============================================================================
 
-function LineupColumn({ label, accent, lineup }: { label: string; accent: string; lineup: any }) {
+function LineupColumn({ theme, label, accent, lineup }: { theme: Theme; label: string; accent: string; lineup: any }) {
   const players = ((lineup?.lineup_players ?? []) as any[]).sort((a, b) => a.slot_number - b.slot_number);
   return (
     <View style={{ flex: 1, gap: 8 }}>
@@ -354,7 +360,7 @@ function LineupColumn({ label, accent, lineup }: { label: string; accent: string
         style={{
           fontFamily: FONT.monoMedium,
           fontSize: 10,
-          color: 'rgba(232,237,242,0.55)',
+          color: theme.muted,
           letterSpacing: 1.6,
           textTransform: 'uppercase',
           marginBottom: 4,
@@ -364,13 +370,13 @@ function LineupColumn({ label, accent, lineup }: { label: string; accent: string
         {label}
       </Text>
       {players.map((lp, i) => (
-        <LineupRow key={lp.nba_players?.id ?? i} index={i} accent={accent} lp={lp} />
+        <LineupRow key={lp.nba_players?.id ?? i} theme={theme} index={i} accent={accent} lp={lp} />
       ))}
     </View>
   );
 }
 
-function LineupRow({ index, accent, lp }: { index: number; accent: string; lp: any }) {
+function LineupRow({ theme, index, accent, lp }: { theme: Theme; index: number; accent: string; lp: any }) {
   const opacity = useSharedValue(0);
   const ty = useSharedValue(12);
   useEffect(() => {
@@ -390,10 +396,10 @@ function LineupRow({ index, accent, lp }: { index: number; accent: string; lp: a
     <Animated.View
       style={[
         {
-          backgroundColor: HG.surface,
+          backgroundColor: theme.surface,
           borderRadius: 12,
           borderWidth: 1,
-          borderColor: HG.hairline,
+          borderColor: theme.hairline,
           padding: 10,
           flexDirection: 'row',
           alignItems: 'center',
@@ -407,14 +413,14 @@ function LineupRow({ index, accent, lp }: { index: number; accent: string; lp: a
     >
       <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={32} showJersey={false} />
       <View style={{ flex: 1 }}>
-        <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 12, color: HG.ink }}>
+        <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 12, color: theme.ink }}>
           {playerLastName(p)}
         </Text>
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 0.4, marginTop: 1 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 0.4, marginTop: 1 }}>
           {p.team_abbreviation} · {p.position}
         </Text>
       </View>
-      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.ink }}>
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: theme.ink }}>
         {fmtPrice(lp.frozen_price)}
       </Text>
     </Animated.View>

@@ -7,10 +7,12 @@ import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import { requestWithdrawal } from '@/services/wallet';
-import { HG, FONT, fmtPrice } from '@/lib/holygrail';
+import { FONT, fmtPrice } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 import type { AppConfig, PayoutMethod } from '@/lib/database.types';
 
 export default function WithdrawScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const { profile, wallet } = useAuthStore();
   const [amount, setAmount] = useState('');
@@ -68,60 +70,60 @@ export default function WithdrawScreen() {
   });
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, gap: 12 }}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
             <Path d="m15 18-6-6 6-6" />
           </Svg>
         </Pressable>
-        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, letterSpacing: -0.4 }}>Withdraw</Text>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink, letterSpacing: -0.4 }}>Withdraw</Text>
       </View>
 
       <View style={{ flex: 1, paddingHorizontal: 24, paddingTop: 8, gap: 0 }}>
         {/* Available balance */}
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 6 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 6 }}>
           Available to Withdraw
         </Text>
-        <Text style={{ fontFamily: FONT.monoBold, fontSize: 36, color: HG.ink, marginBottom: 24 }}>
+        <Text style={{ fontFamily: FONT.monoBold, fontSize: 36, color: theme.ink, marginBottom: 24 }}>
           {fmtPrice(maxWithdraw)}
         </Text>
 
         {/* Escrow notice */}
         {Number(wallet?.escrow_balance ?? 0) > 0 && (
-          <View style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.down + '55', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 20 }}>
-            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.ink2, lineHeight: 20 }}>
+          <View style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.danger + '55', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 20 }}>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.ink2, lineHeight: 20 }}>
               {fmtPrice(Number(wallet?.escrow_balance ?? 0))} is locked in active matchups and not available to withdraw.
             </Text>
           </View>
         )}
 
         {/* Amount input */}
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 8 }}>
           Amount (min ${minWithdrawal})
         </Text>
         <TextInput
-          style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 16, height: 52, fontFamily: FONT.monoBold, fontSize: 24, color: HG.ink, textAlign: 'center', marginBottom: 10 }}
+          style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline, borderRadius: 12, paddingHorizontal: 16, height: 52, fontFamily: FONT.monoBold, fontSize: 24, color: theme.ink, textAlign: 'center', marginBottom: 10 }}
           placeholder="$0.00"
-          placeholderTextColor={HG.muted}
+          placeholderTextColor={theme.muted}
           keyboardType="decimal-pad"
           value={amount}
           onChangeText={setAmount}
         />
         <Pressable onPress={() => setAmount(String(maxWithdraw))} style={{ alignItems: 'center', marginBottom: 28 }}>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.sky }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: theme.accent }}>
             Withdraw all ({fmtPrice(maxWithdraw)})
           </Text>
         </Pressable>
 
         {/* Payout methods */}
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 10 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, letterSpacing: 1.6, textTransform: 'uppercase', marginBottom: 10 }}>
           Payout Method
         </Text>
         {(payoutMethods ?? []).length === 0 ? (
-          <View style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 14, padding: 16, marginBottom: 24 }}>
-            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: HG.muted, lineHeight: 20 }}>
+          <View style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline, borderRadius: 14, padding: 16, marginBottom: 24 }}>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, lineHeight: 20 }}>
               You haven't added a verified payout method yet. Add one in Settings.
             </Text>
           </View>
@@ -133,14 +135,14 @@ export default function WithdrawScreen() {
                 onPress={() => setSelectedMethodId(m.id)}
                 disabled={!m.is_verified}
                 style={{
-                  backgroundColor: selectedMethodId === m.id ? HG.skySoft : HG.surface,
-                  borderWidth: 1, borderColor: selectedMethodId === m.id ? HG.sky : HG.hairline,
+                  backgroundColor: selectedMethodId === m.id ? theme.accentSoft : theme.surface,
+                  borderWidth: 1, borderColor: selectedMethodId === m.id ? theme.accent : theme.hairline,
                   borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
                   opacity: m.is_verified ? 1 : 0.4,
                 }}
               >
-                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink, marginBottom: 2 }}>{m.display_name}</Text>
-                <Text style={{ fontFamily: FONT.mono, fontSize: 11, color: HG.muted }}>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: theme.ink, marginBottom: 2 }}>{m.display_name}</Text>
+                <Text style={{ fontFamily: FONT.mono, fontSize: 11, color: theme.muted }}>
                   {m.is_verified ? m.method_type.toUpperCase() : 'Unverified — contact support'}
                 </Text>
               </Pressable>
@@ -161,18 +163,18 @@ export default function WithdrawScreen() {
             );
           }}
           disabled={withdraw.isPending || !isValid}
-          style={{ height: 54, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: isValid ? 1 : 0.4 }}
+          style={{ height: 54, borderRadius: 999, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center', opacity: isValid ? 1 : 0.4 }}
         >
           {withdraw.isPending ? (
-            <ActivityIndicator color={HG.jet} />
+            <ActivityIndicator color={theme.onAccent} />
           ) : (
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.8, textTransform: 'uppercase' }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.8, textTransform: 'uppercase' }}>
               Withdraw {isValid ? fmtPrice(withdrawAmount) : ''}
             </Text>
           )}
         </Pressable>
 
-        <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted, textAlign: 'center', marginTop: 16, lineHeight: 18 }}>
+        <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.muted, textAlign: 'center', marginTop: 16, lineHeight: 18 }}>
           Withdrawals are processed via ACH or debit. 1–3 business days.
         </Text>
       </View>

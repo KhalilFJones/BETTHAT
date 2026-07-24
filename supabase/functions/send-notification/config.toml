@@ -1,0 +1,11 @@
+[functions.send-notification]
+# All three DB-trigger notification paths (chat message, matchup matched,
+# score lead-change — see internal.send_push_notification() in
+# supabase/migrations/20260522014612_push_notification_triggers.sql) call
+# this function via pg_net with only `Authorization: Bearer <internal secret>`
+# — not a real Supabase JWT, since pg_net has no session to mint one from.
+# With the gateway's default verify_jwt = true, every one of those calls was
+# being rejected with 401 before the function body's own service-role/
+# webhook-secret check (which is the actual, already-correct auth boundary
+# here) ever ran. Real-time push for all three event types was silently dead.
+verify_jwt = false

@@ -11,8 +11,14 @@ type Provider = 'google' | 'apple' | 'facebook';
 
 // The redirect URL Supabase will send the user back to after the OAuth round-
 // trip. Must be allowlisted in Supabase Auth settings ("Additional Redirect
-// URLs") for each environment.
-const REDIRECT_URL = Linking.createURL('/auth/callback');
+// URLs") for each environment. Must match the actual route that handles it —
+// app/(auth)/callback.tsx — which resolves to `/callback`, not `/auth/callback`
+// (the `(auth)` segment is a route group and doesn't appear in the path).
+// This previously pointed at a path with no matching screen, so if
+// expo-web-browser's in-session interception ever fell through to a normal
+// OS-level deep link (observed on some Android configs), the app would land
+// on a 404 instead of the code-exchange handler.
+const REDIRECT_URL = Linking.createURL('/callback');
 
 async function signInWithProvider(provider: Provider) {
   // Step 1: ask Supabase for the OAuth URL (we'll open it ourselves to keep

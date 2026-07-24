@@ -18,7 +18,8 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 const TRACK_HEIGHT = 56;
 const THUMB_SIZE = 48;
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export function SwipeToConfirm({ label, enabled, onConfirm }: Props) {
+  const theme = useTheme();
   const translateX = useSharedValue(0);
   const trackWidth = useSharedValue(0);
   const triggered = useRef(false);
@@ -80,9 +82,9 @@ export function SwipeToConfirm({ label, enabled, onConfirm }: Props) {
       style={{
         height: TRACK_HEIGHT,
         borderRadius: 999,
-        backgroundColor: HG.surface,
+        backgroundColor: theme.surface,
         borderWidth: 1,
-        borderColor: enabled ? HG.skyEdge : HG.hairline,
+        borderColor: enabled ? theme.accentEdge : theme.hairline,
         overflow: 'hidden',
         justifyContent: 'center',
         position: 'relative',
@@ -92,7 +94,7 @@ export function SwipeToConfirm({ label, enabled, onConfirm }: Props) {
       <Animated.View
         pointerEvents="none"
         style={[
-          { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: HG.sky },
+          { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: theme.accent },
           fillStyle,
         ]}
       />
@@ -101,7 +103,7 @@ export function SwipeToConfirm({ label, enabled, onConfirm }: Props) {
         style={{
           fontFamily: FONT.monoBold,
           fontSize: 12,
-          color: HG.ink,
+          color: theme.ink,
           letterSpacing: 1.4,
           textTransform: 'uppercase',
           textAlign: 'center',
@@ -120,10 +122,10 @@ export function SwipeToConfirm({ label, enabled, onConfirm }: Props) {
               width: THUMB_SIZE,
               height: THUMB_SIZE,
               borderRadius: 999,
-              backgroundColor: HG.sky,
+              backgroundColor: theme.accent,
               alignItems: 'center',
               justifyContent: 'center',
-              shadowColor: HG.sky,
+              shadowColor: theme.accent,
               shadowOpacity: 0.4,
               shadowRadius: 12,
               shadowOffset: { width: 0, height: 0 },
@@ -131,7 +133,7 @@ export function SwipeToConfirm({ label, enabled, onConfirm }: Props) {
             thumbStyle,
           ]}
         >
-          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={HG.jet} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={theme.onAccent} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
             <Path d="M5 12h14M13 6l6 6-6 6" />
           </Svg>
         </Animated.View>

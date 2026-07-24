@@ -7,7 +7,8 @@ import Svg, { Path } from 'react-native-svg';
 import { useAuthStore } from '@/stores/auth.store';
 import { createPaymentIntent, EmailUnverifiedError } from '@/services/wallet';
 import { supabase } from '@/lib/supabase';
-import { HG, FONT, fmtPrice } from '@/lib/holygrail';
+import { FONT, fmtPrice } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 // Stripe payment sheet is loaded lazily so that tests / web platforms which
 // don't link the native module don't crash on import.
@@ -27,6 +28,7 @@ async function presentStripeSheet(clientSecret: string, publishableKey: string) 
 const AMOUNTS = [10, 20, 50, 100, 200];
 
 export default function DepositScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const { wallet } = useAuthStore();
   const [amount, setAmount] = useState('');
@@ -77,30 +79,30 @@ export default function DepositScreen() {
   });
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
             <Path d="m15 18-6-6 6-6" />
           </Svg>
         </Pressable>
-        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginLeft: 12 }}>Deposit</Text>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink, marginLeft: 12 }}>Deposit</Text>
       </View>
 
       <View style={{ flex: 1, paddingHorizontal: 18, paddingTop: 16 }}>
         {/* Balance display */}
-        <View style={{ padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.hairline, marginBottom: 28 }}>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 6 }}>
+        <View style={{ padding: 18, backgroundColor: theme.surface, borderRadius: 16, borderWidth: 1, borderColor: theme.hairline, marginBottom: 28 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 6 }}>
             Current Balance
           </Text>
-          <Text style={{ fontFamily: FONT.monoBold, fontSize: 32, color: HG.ink, letterSpacing: -0.5 }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 32, color: theme.ink, letterSpacing: -0.5 }}>
             {fmtPrice(wallet?.balance ?? 0)}
           </Text>
         </View>
 
         {/* Preset amounts */}
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 10 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 10 }}>
           Select Amount
         </Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
@@ -110,11 +112,11 @@ export default function DepositScreen() {
               onPress={() => { setSelectedPreset(a); setAmount(''); }}
               style={{
                 paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12, borderWidth: 1,
-                borderColor: selectedPreset === a ? HG.sky : HG.hairline,
-                backgroundColor: selectedPreset === a ? HG.sky + '22' : HG.surface,
+                borderColor: selectedPreset === a ? theme.accent : theme.hairline,
+                backgroundColor: selectedPreset === a ? theme.accentSoft : theme.surface,
               }}
             >
-              <Text style={{ fontFamily: FONT.monoBold, fontSize: 14, color: selectedPreset === a ? HG.sky : HG.muted }}>
+              <Text style={{ fontFamily: FONT.monoBold, fontSize: 14, color: selectedPreset === a ? theme.accent : theme.muted }}>
                 ${a}
               </Text>
             </Pressable>
@@ -122,13 +124,13 @@ export default function DepositScreen() {
         </View>
 
         {/* Custom amount */}
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1.4, textTransform: 'uppercase', marginBottom: 8 }}>
           Or enter custom amount
         </Text>
         <TextInput
-          style={{ backgroundColor: HG.surface, borderWidth: 1, borderColor: HG.hairline, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontFamily: FONT.monoBold, fontSize: 28, color: HG.ink, textAlign: 'center', marginBottom: 28 }}
+          style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 14, fontFamily: FONT.monoBold, fontSize: 28, color: theme.ink, textAlign: 'center', marginBottom: 28 }}
           placeholder="$0.00"
-          placeholderTextColor={HG.muted}
+          placeholderTextColor={theme.muted}
           keyboardType="decimal-pad"
           value={amount}
           onChangeText={(v) => { setAmount(v); setSelectedPreset(null); }}
@@ -138,18 +140,18 @@ export default function DepositScreen() {
         <Pressable
           onPress={() => deposit.mutate()}
           disabled={deposit.isPending || (!selectedPreset && (!amount || Number.isNaN(parseFloat(amount))))}
-          style={{ height: 54, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center', opacity: !finalAmount || Number.isNaN(finalAmount) ? 0.4 : 1 }}
+          style={{ height: 54, borderRadius: 999, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center', opacity: !finalAmount || Number.isNaN(finalAmount) ? 0.4 : 1 }}
         >
           {deposit.isPending ? (
-            <ActivityIndicator color={HG.jet} />
+            <ActivityIndicator color={theme.onAccent} />
           ) : (
-            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.8, textTransform: 'uppercase' }}>
+            <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.8, textTransform: 'uppercase' }}>
               Deposit {finalAmount && !Number.isNaN(finalAmount) ? fmtPrice(finalAmount) : ''}
             </Text>
           )}
         </Pressable>
 
-        <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: HG.muted, textAlign: 'center', marginTop: 14 }}>
+        <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.muted, textAlign: 'center', marginTop: 14 }}>
           Deposits are processed securely via Stripe.
         </Text>
       </View>

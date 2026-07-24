@@ -1,96 +1,77 @@
-import { Tabs } from 'expo-router';
-import { View } from 'react-native';
+import { Tabs, useRouter } from 'expo-router';
+import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
-import Svg, { Path, Circle } from 'react-native-svg';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 
-// BETTHAT tab bar — floating dark pill, yellow active indicator.
-// Home · Market · Matchups · Profile. The pill stays dark in both light and
-// dark mode (matching the Figma). Underlying file `lineup.tsx` is the Market
-// route, kept to avoid breaking existing deep links.
+// BETTHAT tab bar — matches the Figma "Nav" component exactly:
+// 248x56 dark pill (#151517), 5 buttons @ 48x48, no gap (4px outer padding
+// only: 4 + 5*48 + 4 = 248). Icons swap to the filled Ionicons variant + a
+// yellow (#F0F600) circle when focused; inactive icons are the outline
+// variant in Greyscale/500 (#8A8A8E).
+//
+// Order per Figma: Home · Market (globe) · Notifications (bell) ·
+// Matchups (pie-chart) · Profile (user). Notifications isn't a tab content
+// screen — it's a stacked push (app/notifications.tsx) — so it's rendered
+// as a plain nav button rather than a Tabs.Screen.
+//
+// Underlying file `lineup.tsx` is the Market route, kept to avoid breaking
+// existing deep links.
 
-const ACCENT = '#F0F600';   // Primary/400 (active)
-const ON_ACCENT = '#151517';
-const PILL = '#151517';     // Greyscale/800 pill surface
-const INACTIVE = '#8A8A8E'; // Greyscale/500 icons
+const ACCENT = '#F0F600';   // Primary/400 - Base
+const ON_ACCENT = '#151517'; // Greyscale/800
+const PILL = '#151517';
+const INACTIVE = '#8A8A8E'; // Greyscale/500
+const NOTIF_BADGE = '#FF3B30';
 
-function Icon({ name, color }: { name: string; color: string }) {
-  const stroke = color;
-  const sw = 1.5;
-  switch (name) {
-    case 'home':
-      return (
-        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
-          <Path d="m3 12 9-9 9 9" />
-          <Path d="M5 10v10h14V10" />
-        </Svg>
-      );
-    case 'market':
-      return (
-        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
-          <Path d="M3 17l6-6 4 4 8-8" />
-          <Path d="M14 7h7v7" />
-        </Svg>
-      );
-    case 'matchups':
-      return (
-        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
-          <Circle cx={12} cy={12} r={9} />
-          <Path d="M12 3v18M3 12h18" />
-        </Svg>
-      );
-    case 'profile':
-      return (
-        <Svg viewBox="0 0 24 24" width={22} height={22} fill="none" stroke={stroke} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round">
-          <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <Circle cx={12} cy={7} r={4} />
-        </Svg>
-      );
-    default:
-      return null;
-  }
-}
+const BUTTON = 48;
+const NAV_WIDTH = 248; // 4 (pad) + 5*48 + 4 (pad)
 
-function TabIcon({
-  iconName,
+function NavIcon({
+  outlineName,
+  filledName,
   focused,
-  badge = false,
+  badge,
 }: {
-  iconName: string;
+  outlineName: keyof typeof Ionicons.glyphMap;
+  filledName: keyof typeof Ionicons.glyphMap;
   focused: boolean;
   badge?: boolean;
 }) {
   return (
     <View
       style={{
-        width: 46,
-        height: 46,
+        width: BUTTON,
+        height: BUTTON,
         borderRadius: 999,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: focused ? ACCENT : 'transparent',
       }}
     >
-      <Icon name={iconName} color={focused ? ON_ACCENT : INACTIVE} />
-      {badge && (
-        <View style={{
-          position: 'absolute', top: 6, right: 6,
-          width: 8, height: 8, borderRadius: 4,
-          backgroundColor: '#FF3B30',
-          borderWidth: 1.5, borderColor: focused ? ACCENT : PILL,
-        }} />
-      )}
+      <Ionicons name={focused ? filledName : outlineName} size={20} color={focused ? ON_ACCENT : INACTIVE} />
+      {badge ? (
+        <View
+          style={{
+            position: 'absolute', top: 9, right: 9,
+            width: 8, height: 8, borderRadius: 4,
+            backgroundColor: NOTIF_BADGE,
+            borderWidth: 1.5, borderColor: focused ? ACCENT : PILL,
+          }}
+        />
+      ) : null}
     </View>
   );
 }
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { profile } = useAuthStore();
 
-  // SCRUM-198: Live badge on Matchups tab when user has an active/in-progress matchup
+  // Live badge on Matchups tab when the user has an active/in-progress matchup.
   const { data: hasLive } = useQuery({
     queryKey: ['has-live-matchup', profile?.id],
     queryFn: async () => {
@@ -106,50 +87,102 @@ export default function TabLayout() {
     refetchInterval: 30_000,
   });
 
+  // Unread badge on the Notifications button.
+  const { data: hasUnread } = useQuery({
+    queryKey: ['has-unread-notifications', profile?.id],
+    queryFn: async () => {
+      if (!profile?.id) return false;
+      const { count } = await supabase
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', profile.id)
+        .eq('is_read', false);
+      return (count ?? 0) > 0;
+    },
+    enabled: !!profile?.id,
+    refetchInterval: 30_000,
+  });
+
   return (
     <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarShowLabel: false,
-        tabBarItemStyle: { height: 56 },
-        tabBarStyle: {
-          position: 'absolute',
-          width: 260,
-          left: '50%',
-          marginLeft: -130,
-          bottom: insets.bottom + 12,
-          height: 56,
-          borderRadius: 999,
-          backgroundColor: PILL,
-          borderTopWidth: 0,
-          paddingTop: 4,
-          paddingBottom: 0,
-          paddingHorizontal: 4,
-          // floating shadow
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 8 },
-          shadowOpacity: 0.25,
-          shadowRadius: 16,
-          elevation: 12,
-        },
+      // NOTE: tabBarStyle/tabBarShowLabel/etc are irrelevant here — supplying
+      // a custom `tabBar` render prop below bypasses React Navigation's
+      // default bar entirely, so the only screenOption that still applies is
+      // headerShown.
+      screenOptions={{ headerShown: false }}
+      // Custom tab bar: same 4 real tabs, but with a 5th non-tab Notifications
+      // button spliced in at its Figma position (3rd of 5).
+      tabBar={(props) => {
+        const { state, descriptors, navigation } = props;
+        const routesByName = Object.fromEntries(state.routes.map((r) => [r.name, r]));
+
+        function renderTab(name: string, icon: { outline: keyof typeof Ionicons.glyphMap; filled: keyof typeof Ionicons.glyphMap }, badge?: boolean) {
+          const route = routesByName[name];
+          const routeIndex = state.routes.findIndex((r) => r.name === name);
+          const focused = state.index === routeIndex;
+          const { options } = descriptors[route.key];
+          return (
+            <Pressable
+              key={name}
+              accessibilityRole="button"
+              accessibilityState={focused ? { selected: true } : {}}
+              accessibilityLabel={options.title ?? name}
+              onPress={() => {
+                const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
+                if (!focused && !event.defaultPrevented) navigation.navigate(route.name);
+              }}
+              style={{ width: BUTTON, height: BUTTON, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <NavIcon outlineName={icon.outline} filledName={icon.filled} focused={focused} badge={badge} />
+            </Pressable>
+          );
+        }
+
+        return (
+          <View
+            style={{
+              position: 'absolute',
+              width: NAV_WIDTH,
+              left: '50%',
+              marginLeft: -NAV_WIDTH / 2,
+              bottom: insets.bottom + 8,
+              height: 56,
+              borderRadius: 999,
+              backgroundColor: PILL,
+              borderWidth: 0.5,
+              borderColor: 'rgba(255,255,255,0.08)',
+              paddingHorizontal: 4,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.25,
+              shadowRadius: 16,
+              elevation: 12,
+            }}
+          >
+            {renderTab('home', { outline: 'home-outline', filled: 'home' })}
+            {renderTab('lineup', { outline: 'globe-outline', filled: 'globe' })}
+            <Pressable
+              key="notifications"
+              accessibilityRole="button"
+              accessibilityLabel="Notifications"
+              onPress={() => router.push('/notifications' as any)}
+              style={{ width: BUTTON, height: BUTTON, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <NavIcon outlineName="notifications-outline" filledName="notifications" focused={false} badge={!!hasUnread} />
+            </Pressable>
+            {renderTab('matchups', { outline: 'pie-chart-outline', filled: 'pie-chart' }, !!hasLive)}
+            {renderTab('profile', { outline: 'person-outline', filled: 'person' })}
+          </View>
+        );
       }}
     >
-      <Tabs.Screen
-        name="home"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="home" focused={focused} /> }}
-      />
-      <Tabs.Screen
-        name="lineup"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="market" focused={focused} /> }}
-      />
-      <Tabs.Screen
-        name="matchups"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="matchups" focused={focused} badge={!!hasLive} /> }}
-      />
-      <Tabs.Screen
-        name="profile"
-        options={{ tabBarIcon: ({ focused }) => <TabIcon iconName="profile" focused={focused} /> }}
-      />
+      <Tabs.Screen name="home" options={{ title: 'Home' }} />
+      <Tabs.Screen name="lineup" options={{ title: 'Market' }} />
+      <Tabs.Screen name="matchups" options={{ title: 'Matchups' }} />
+      <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>
   );
 }

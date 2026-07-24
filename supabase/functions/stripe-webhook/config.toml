@@ -1,0 +1,9 @@
+[functions.stripe-webhook]
+# Stripe's webhook POST carries no Supabase JWT/apikey — it can't, Stripe has
+# no knowledge of Supabase auth. With the gateway's default verify_jwt = true,
+# every real webhook delivery was being rejected with 401 at the gateway,
+# before this function's own Stripe-signature verification ever ran. That
+# signature check (stripe.webhooks.constructEventAsync) is the real auth
+# boundary here, exactly like sync-nba-data / sync-odds use their own
+# x-sync-secret/service-role check instead of gateway JWT verification.
+verify_jwt = false

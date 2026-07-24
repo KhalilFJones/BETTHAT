@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import Svg, { Path } from 'react-native-svg';
-import { HG } from '@/lib/holygrail';
+import { useTheme } from '@/lib/theme';
 
 interface Props {
   prices: number[];
@@ -14,9 +14,10 @@ interface Props {
 // Single stroke, no fill, no gridlines. Color follows price direction
 // (the only place green/red are allowed in this component).
 export function Sparkline({ prices, width = 56, height = 22, direction }: Props) {
+  const theme = useTheme();
   const path = useMemo(() => buildPath(prices, width, height), [prices, width, height]);
   const dir = direction ?? autoDirection(prices);
-  const stroke = dir === 'up' ? HG.up : dir === 'down' ? HG.down : HG.muted;
+  const stroke = dir === 'up' ? theme.up : dir === 'down' ? theme.down : theme.muted;
 
   if (!path) {
     return <Svg width={width} height={height} />;

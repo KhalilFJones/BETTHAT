@@ -10,23 +10,28 @@ import { useRouter } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { HG, FONT } from '@/lib/holygrail';
+import { FONT } from '@/lib/holygrail';
+import { useTheme, type Theme } from '@/lib/theme';
 import type { Achievement, UserAchievement } from '@/lib/database.types';
 
-const RARITY_TINT: Record<string, string> = {
-  common: HG.muted,
-  rare: HG.sky,
-  epic: '#A855F7',
-  legendary: '#F5A524',
-};
+function rarityTint(theme: Theme): Record<string, string> {
+  return {
+    common: theme.muted,
+    rare: theme.accent,
+    epic: '#A855F7',
+    legendary: '#F5A524',
+  };
+}
 
 const RARITY_LABELS: Record<string, string> = {
   common: 'Common', rare: 'Rare', epic: 'Epic', legendary: 'Legendary',
 };
 
 export default function AchievementsScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const { profile } = useAuthStore();
+  const RARITY_TINT = rarityTint(theme);
 
   const { data, isLoading } = useQuery({
     queryKey: ['achievements_full', profile?.id],
@@ -54,33 +59,33 @@ export default function AchievementsScreen() {
     .filter((g) => g.items.length > 0);
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       {/* Header */}
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, height: 48 }}>
         <Pressable onPress={() => router.back()} hitSlop={12}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={HG.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink2} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
             <Path d="m15 18-6-6 6-6" />
           </Svg>
         </Pressable>
-        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginLeft: 12 }}>Achievements</Text>
+        <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink, marginLeft: 12 }}>Achievements</Text>
       </View>
 
       {/* Progress bar */}
-      <View style={{ marginHorizontal: 18, marginTop: 8, marginBottom: 18, padding: 18, backgroundColor: HG.surface, borderRadius: 16, borderWidth: 1, borderColor: HG.hairline }}>
+      <View style={{ marginHorizontal: 18, marginTop: 8, marginBottom: 18, padding: 18, backgroundColor: theme.surface, borderRadius: 16, borderWidth: 1, borderColor: theme.hairline }}>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 }}>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 13, color: HG.ink }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 13, color: theme.ink }}>
             {earnedCount} / {totalCount} Unlocked
           </Text>
-          <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: HG.sky }}>{pct}%</Text>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 13, color: theme.accent }}>{pct}%</Text>
         </View>
-        <View style={{ height: 8, backgroundColor: HG.hairline, borderRadius: 999, overflow: 'hidden' }}>
-          <View style={{ height: '100%', width: `${pct}%`, backgroundColor: HG.sky, borderRadius: 999 }} />
+        <View style={{ height: 8, backgroundColor: theme.hairline, borderRadius: 999, overflow: 'hidden' }}>
+          <View style={{ height: '100%', width: `${pct}%`, backgroundColor: theme.accent, borderRadius: 999 }} />
         </View>
       </View>
 
       {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <ActivityIndicator color={HG.sky} />
+          <ActivityIndicator color={theme.accent} />
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 80 }}>
@@ -88,11 +93,11 @@ export default function AchievementsScreen() {
             <View key={rarity} style={{ marginBottom: 28 }}>
               {/* Divider with rarity label */}
               <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                <View style={{ flex: 1, height: 1, backgroundColor: HG.hairline }} />
+                <View style={{ flex: 1, height: 1, backgroundColor: theme.hairline }} />
                 <Text style={{ marginHorizontal: 10, fontFamily: FONT.monoBold, fontSize: 9, letterSpacing: 1.8, color: RARITY_TINT[rarity], textTransform: 'uppercase' }}>
                   {RARITY_LABELS[rarity]}
                 </Text>
-                <View style={{ flex: 1, height: 1, backgroundColor: HG.hairline }} />
+                <View style={{ flex: 1, height: 1, backgroundColor: theme.hairline }} />
               </View>
 
               {items.map((ach) => {
@@ -103,16 +108,16 @@ export default function AchievementsScreen() {
                     key={ach.id}
                     style={{
                       flexDirection: 'row', alignItems: 'center',
-                      backgroundColor: HG.surface, borderRadius: 14,
+                      backgroundColor: theme.surface, borderRadius: 14,
                       paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8,
                       borderWidth: 1,
-                      borderColor: unlocked ? RARITY_TINT[rarity] + '55' : HG.hairline,
+                      borderColor: unlocked ? RARITY_TINT[rarity] + '55' : theme.hairline,
                       opacity: unlocked ? 1 : 0.45,
                     }}
                   >
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: HG.ink }}>{ach.name}</Text>
-                      <Text numberOfLines={2} style={{ fontFamily: FONT.sans, fontSize: 12, color: HG.muted, marginTop: 3 }}>
+                      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: theme.ink }}>{ach.name}</Text>
+                      <Text numberOfLines={2} style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.muted, marginTop: 3 }}>
                         {ach.description}
                       </Text>
                       {unlocked && earned?.earned_at && (
@@ -123,11 +128,11 @@ export default function AchievementsScreen() {
                     </View>
                     <View style={{ marginLeft: 12, alignItems: 'center', justifyContent: 'center', width: 64 }}>
                       {unlocked ? (
-                        <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, letterSpacing: 1, color: HG.sky, textTransform: 'uppercase' }}>
+                        <Text style={{ fontFamily: FONT.monoBold, fontSize: 9, letterSpacing: 1, color: theme.accent, textTransform: 'uppercase' }}>
                           ✓ Done
                         </Text>
                       ) : (
-                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: HG.muted, textTransform: 'uppercase' }}>Locked</Text>
+                        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, textTransform: 'uppercase' }}>Locked</Text>
                       )}
                     </View>
                   </View>
@@ -140,4 +145,3 @@ export default function AchievementsScreen() {
     </SafeAreaView>
   );
 }
-

@@ -12,7 +12,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, ActivityIndicator, RefreshControl,
-  Modal, TextInput, Alert, Share,
+  Modal, TextInput, Alert, Share, PanResponder,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -555,7 +555,7 @@ export default function ProfileScreen() {
                 <TextInput
                   style={[s.input, {
                     paddingRight: 40,
-                    borderColor: usernameAvailable === false ? theme.down : usernameAvailable === true ? theme.up : theme.hairline,
+                    borderColor: usernameAvailable === false ? theme.danger : usernameAvailable === true ? theme.gain : theme.hairline,
                   }]}
                   value={editUsername}
                   onChangeText={(v) => { setEditUsername(v.replace(/[^a-zA-Z0-9_]/g, '').toLowerCase()); setUsernameAvailable(null); }}
@@ -570,13 +570,13 @@ export default function ProfileScreen() {
                 {checkingUsername ? (
                   <ActivityIndicator size="small" color={theme.muted} style={{ position: 'absolute', right: 14, top: 14 }} />
                 ) : usernameAvailable === true ? (
-                  <Text style={{ position: 'absolute', right: 14, top: 13, fontFamily: FONT.sansBold, fontSize: 15, color: theme.up }}>✓</Text>
+                  <Text style={{ position: 'absolute', right: 14, top: 13, fontFamily: FONT.sansBold, fontSize: 15, color: theme.gain }}>✓</Text>
                 ) : usernameAvailable === false ? (
-                  <Text style={{ position: 'absolute', right: 14, top: 13, fontFamily: FONT.sansBold, fontSize: 15, color: theme.down }}>✗</Text>
+                  <Text style={{ position: 'absolute', right: 14, top: 13, fontFamily: FONT.sansBold, fontSize: 15, color: theme.danger }}>✗</Text>
                 ) : null}
               </View>
               {usernameAvailable === false && editUsername.length >= 3 && (
-                <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.down }}>Username taken or invalid (min 3 chars, a–z 0–9 _)</Text>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.danger }}>Username taken or invalid (min 3 chars, a–z 0–9 _)</Text>
               )}
             </View>
 
@@ -791,8 +791,11 @@ function TimeSegments({ value, onChange, theme }: { value: Range; onChange: (r: 
 }
 
 // ── Last-10 equity-curve chart (yellow line, indigo fill) ────────────────────
+// The indicator dot is user-draggable — press/drag anywhere on the chart to
+// scrub through each game's value; it snaps back to the peak game on release.
 function TrendChart({ points, theme, loading }: { points: { v: number; day: string; won: boolean }[]; theme: Theme; loading?: boolean }) {
   const [w, setW] = useState(0);
+  const [touchIdx, setTouchIdx] = useState<number | null>(null);
   const H = 168;
   const padT = 30, padB = 22, padL = 10, padR = 46;
 
@@ -811,8 +814,33 @@ function TrendChart({ points, theme, loading }: { points: { v: number; day: stri
     let peakIdx = 0;
     points.forEach((p, i) => { if (p.v > points[peakIdx].v) peakIdx = i; });
     const gridVals = [0, 0.25, 0.5, 0.75, 1].map((f) => max - f * (max - min));
-    return { x, y, line, area, peakIdx, gridVals };
+    return { x, y, line, area, peakIdx, gridVals, innerW };
   }, [w, points]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (e) => scrub(e.nativeEvent.locationX),
+        onPanResponderMove: (e) => scrub(e.nativeEvent.locationX),
+        onPanResponderRelease: () => setTouchIdx(null),
+        onPanResponderTerminate: () => setTouchIdx(null),
+        // Without this, the parent ScrollView steals the touch the moment the
+        // drag drifts vertically even slightly, which fires onPanResponderTerminate
+        // mid-gesture and snaps the dot back while the finger is still down.
+        onPanResponderTerminationRequest: () => false,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [geom, points.length],
+  );
+
+  function scrub(localX: number) {
+    if (!geom) return;
+    const frac = (localX - padL) / geom.innerW;
+    const idx = Math.round(Math.max(0, Math.min(1, frac)) * (points.length - 1));
+    setTouchIdx(idx);
+  }
 
   if (points.length < 2) {
     return (
@@ -822,8 +850,10 @@ function TrendChart({ points, theme, loading }: { points: { v: number; day: stri
     );
   }
 
+  const activeIdx = touchIdx ?? geom?.peakIdx ?? 0;
+
   return (
-    <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ height: H }}>
+    <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ height: H }} {...panResponder.panHandlers}>
       {geom && w > 0 && (
         <Svg width={w} height={H}>
           <Defs>
@@ -843,19 +873,22 @@ function TrendChart({ points, theme, loading }: { points: { v: number; day: stri
           })}
           <Path d={geom.area} fill="url(#area10)" />
           <Path d={geom.line} stroke={theme.accent} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          <Circle cx={geom.x(geom.peakIdx)} cy={geom.y(points[geom.peakIdx].v)} r={6} fill={theme.accent} />
-          <Circle cx={geom.x(geom.peakIdx)} cy={geom.y(points[geom.peakIdx].v)} r={4} fill="#FFFFFF" />
+          {touchIdx != null && (
+            <Line x1={geom.x(activeIdx)} y1={padT - 6} x2={geom.x(activeIdx)} y2={H - padB} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="3 4" />
+          )}
+          <Circle cx={geom.x(activeIdx)} cy={geom.y(points[activeIdx].v)} r={6} fill={theme.accent} />
+          <Circle cx={geom.x(activeIdx)} cy={geom.y(points[activeIdx].v)} r={4} fill="#FFFFFF" />
           {(() => {
-            const cx = geom.x(geom.peakIdx);
+            const cx = geom.x(activeIdx);
             const boxW = 92;
             const bx = Math.max(padL, Math.min(w - padR - boxW, cx - boxW / 2));
             return (
               <>
                 <Rect x={bx} y={2} width={boxW} height={34} rx={8} fill={theme.surface} stroke={theme.hairline} strokeWidth={1} />
                 <SvgText x={bx + boxW / 2} y={15} fontSize={9} fontFamily={FONT.sans} fill={theme.muted} textAnchor="middle">
-                  {new Date(points[geom.peakIdx].day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {new Date(points[activeIdx].day).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </SvgText>
-                <SvgText x={bx + boxW / 2} y={29} fontSize={13} fontFamily={FONT.sansBold} fill={theme.ink} textAnchor="middle">{fmtPrice(points[geom.peakIdx].v)}</SvgText>
+                <SvgText x={bx + boxW / 2} y={29} fontSize={13} fontFamily={FONT.sansBold} fill={theme.ink} textAnchor="middle">{fmtPrice(points[activeIdx].v)}</SvgText>
               </>
             );
           })()}
@@ -869,10 +902,14 @@ function TrendChart({ points, theme, loading }: { points: { v: number; day: stri
 }
 
 // ── Net-winnings area chart (green, dashed indicator + floating pill) ─────────
+// Drag anywhere on the chart to scrub through the series; the dot + pill
+// follow the touch and snap back to the default point on release.
 function NetWinningsChart({ values, theme }: { values: number[]; theme: Theme }) {
   const [w, setW] = useState(0);
+  const [touchIdx, setTouchIdx] = useState<number | null>(null);
   const H = 190;
   const padT = 40, padB = 8;
+  const defaultIdx = Math.round((values.length - 1) * 0.72);
 
   const geom = useMemo(() => {
     if (w === 0 || values.length < 2) return null;
@@ -884,12 +921,47 @@ function NetWinningsChart({ values, theme }: { values: number[]; theme: Theme })
     const y = (v: number) => padT + innerH - ((v - min) / (max - min || 1)) * innerH;
     const line = values.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
     const area = `${line} L${x(values.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L0,${(H - padB).toFixed(1)} Z`;
-    const idx = Math.round((values.length - 1) * 0.72);
-    return { x, y, line, area, idx, ix: x(idx), iy: y(values[idx]), val: values[idx] };
+    return { x, y, line, area };
   }, [w, values]);
 
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (e) => scrub(e.nativeEvent.locationX),
+        onPanResponderMove: (e) => scrub(e.nativeEvent.locationX),
+        onPanResponderRelease: () => setTouchIdx(null),
+        onPanResponderTerminate: () => setTouchIdx(null),
+        // Without this, the parent ScrollView steals the touch the moment the
+        // drag drifts vertically even slightly, which fires onPanResponderTerminate
+        // mid-gesture and snaps the dot back while the finger is still down.
+        onPanResponderTerminationRequest: () => false,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [w, values.length],
+  );
+
+  function scrub(localX: number) {
+    if (w === 0) return;
+    const frac = localX / w;
+    const idx = Math.round(Math.max(0, Math.min(1, frac)) * (values.length - 1));
+    setTouchIdx(idx);
+  }
+
+  const activeIdx = touchIdx ?? defaultIdx;
+  const val = geom ? values[activeIdx] : 0;
+  const base = values[0];
+  const pct = geom && base !== 0 ? ((val - base) / Math.abs(base)) * 100 : 0;
+  const ix = geom ? geom.x(activeIdx) : 0;
+  const iy = geom ? geom.y(val) : 0;
+
   return (
-    <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ height: H, marginTop: 12, marginHorizontal: -16 }}>
+    <View
+      onLayout={(e) => setW(e.nativeEvent.layout.width)}
+      style={{ height: H, marginTop: 12, marginHorizontal: -16 }}
+      {...panResponder.panHandlers}
+    >
       {geom && w > 0 && (
         <>
           <Svg width={w} height={H}>
@@ -901,24 +973,25 @@ function NetWinningsChart({ values, theme }: { values: number[]; theme: Theme })
             </Defs>
             <Path d={geom.area} fill="url(#areaNet)" />
             <Path d={geom.line} stroke={theme.gain} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            <Line x1={geom.ix} y1={padT - 6} x2={geom.ix} y2={H} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="4 4" />
-            <Circle cx={geom.ix} cy={geom.iy} r={6} fill={theme.gain} />
-            <Circle cx={geom.ix} cy={geom.iy} r={4} fill="#FFFFFF" />
+            <Line x1={ix} y1={padT - 6} x2={ix} y2={H} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="4 4" />
+            <Circle cx={ix} cy={iy} r={6} fill={theme.gain} />
+            <Circle cx={ix} cy={iy} r={4} fill="#FFFFFF" />
           </Svg>
           {/* floating value pill */}
           <View
             style={{
               position: 'absolute', top: 4,
-              left: Math.max(8, Math.min(w - 132, geom.ix - 64)),
+              left: Math.max(8, Math.min(w - 132, ix - 64)),
               flexDirection: 'row', alignItems: 'center', gap: 6,
               backgroundColor: theme.surface, borderColor: theme.hairline, borderWidth: 1,
               borderRadius: 999, paddingVertical: 4, paddingLeft: 12, paddingRight: 4,
             }}
+            pointerEvents="none"
           >
-            <Text style={{ fontFamily: FONT.sansBold, fontSize: 12, color: theme.ink }}>{fmtPrice(geom.val)}</Text>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: theme.gainSoft, borderRadius: 999, paddingVertical: 3, paddingHorizontal: 6 }}>
-              <Text style={{ fontFamily: FONT.sansBold, fontSize: 10, color: theme.gain }}>▲</Text>
-              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 11, color: theme.gain }}>1.05%</Text>
+            <Text style={{ fontFamily: FONT.sansBold, fontSize: 12, color: theme.ink }}>{fmtPrice(val)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: pct >= 0 ? theme.gainSoft : 'rgba(240,93,93,0.12)', borderRadius: 999, paddingVertical: 3, paddingHorizontal: 6 }}>
+              <Text style={{ fontFamily: FONT.sansBold, fontSize: 10, color: pct >= 0 ? theme.gain : theme.danger }}>{pct >= 0 ? '▲' : '▼'}</Text>
+              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 11, color: pct >= 0 ? theme.gain : theme.danger }}>{Math.abs(pct).toFixed(2)}%</Text>
             </View>
           </View>
         </>

@@ -12,11 +12,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { cancelLineupOrder } from '@/services/matchup';
 import { useAuthStore } from '@/stores/auth.store';
-import { HG, FONT, fmtPrice, fmtRelative, opponentColor } from '@/lib/holygrail';
+import { FONT, fmtPrice, fmtRelative, opponentColor } from '@/lib/holygrail';
+import { useTheme, type Theme } from '@/lib/theme';
 import { ScreenHeader } from '@/components/holygrail/ScreenHeader';
 import { SectionHead } from '@/components/holygrail/SectionHead';
 
 export default function MatchupsScreen() {
+  const theme = useTheme();
   const router = useRouter();
   const { profile, wallet } = useAuthStore();
   const qc = useQueryClient();
@@ -37,6 +39,11 @@ export default function MatchupsScreen() {
             u2:profiles!user2_id(id, username, display_name)
           `)
           .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
+          // Cancelled orders flip to 'voided' but never match a status bucket
+          // below, so without this filter they'd still occupy slots in the
+          // 40-row window and could silently push real (pending/live/
+          // completed) matchups off the list for a user with many cancels.
+          .neq('status', 'voided')
           .order('created_at', { ascending: false })
           .limit(40),
         supabase
@@ -94,7 +101,7 @@ export default function MatchupsScreen() {
   const pending = allMatchups.filter((m: any) => m.status === 'pending');
 
   return (
-    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: HG.jet }}>
+    <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       <ScreenHeader walletBalance={wallet?.balance} />
 
       <FlatList
@@ -113,24 +120,24 @@ export default function MatchupsScreen() {
           if (item.kind === 'queue') return `q-${(item as any).q.id}`;
           return `m-${(item as any).m.id}`;
         }}
-        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={HG.sky} />}
+        refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.accent} />}
         contentContainerStyle={{ paddingBottom: 120 }}
         ListEmptyComponent={
           isLoading ? (
-            <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={HG.sky} /></View>
+            <View style={{ padding: 60, alignItems: 'center' }}><ActivityIndicator color={theme.accent} /></View>
           ) : (
-            <View style={{ padding: 28, marginHorizontal: 18, marginTop: 32, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1 }}>
-              <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: HG.ink, marginBottom: 8 }}>
-                No <Text style={{ fontFamily: FONT.serifItalic, color: HG.muted }}>matchups</Text> yet
+            <View style={{ padding: 28, marginHorizontal: 18, marginTop: 32, backgroundColor: theme.surface, borderRadius: 16, borderColor: theme.hairline, borderWidth: 1 }}>
+              <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink, marginBottom: 8 }}>
+                No <Text style={{ fontFamily: FONT.serifItalic, color: theme.muted }}>matchups</Text> yet
               </Text>
-              <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: HG.muted, lineHeight: 21 }}>
+              <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.muted, lineHeight: 21 }}>
                 Build a 3-player lineup in the Market and place an order to get matched with an opponent.
               </Text>
               <Pressable
                 onPress={() => router.push('/(tabs)/lineup' as any)}
-                style={{ marginTop: 18, height: 44, borderRadius: 999, backgroundColor: HG.sky, alignItems: 'center', justifyContent: 'center' }}
+                style={{ marginTop: 18, height: 44, borderRadius: 999, backgroundColor: theme.accent, alignItems: 'center', justifyContent: 'center' }}
               >
-                <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: HG.jet, letterSpacing: 1.4, textTransform: 'uppercase' }}>
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 12, color: theme.onAccent, letterSpacing: 1.4, textTransform: 'uppercase' }}>
                   Open Market
                 </Text>
               </Pressable>
@@ -146,16 +153,16 @@ export default function MatchupsScreen() {
             const q = (item as any).q;
             const isCancelling = cancelMutation.isPending && (cancelMutation.variables as any)?.lineupId === q.lineup_id;
             return (
-              <View style={{ marginHorizontal: 18, marginVertical: 4, padding: 16, backgroundColor: HG.surface, borderRadius: 14, borderWidth: 1, borderColor: HG.hairline, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: HG.sky }} />
+              <View style={{ marginHorizontal: 18, marginVertical: 4, padding: 16, backgroundColor: theme.surface, borderRadius: 14, borderWidth: 1, borderColor: theme.hairline, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent }} />
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: HG.ink }}>Searching for opponent…</Text>
-                  <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, marginTop: 2 }}>
+                  <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.ink }}>Searching for opponent…</Text>
+                  <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, marginTop: 2 }}>
                     Wager: ${Number(q.max_wager).toFixed(2)} · {q.game_date}
                   </Text>
                 </View>
                 {isCancelling ? (
-                  <ActivityIndicator size="small" color={HG.muted} />
+                  <ActivityIndicator size="small" color={theme.muted} />
                 ) : (
                   <Pressable
                     onPress={() => confirmCancel(q.lineup_id)}
@@ -173,6 +180,7 @@ export default function MatchupsScreen() {
             <MatchupRow
               matchup={r.m}
               meId={profile?.id ?? ''}
+              theme={theme}
               onPress={() => router.push(`/matchup/${r.m.id}` as any)}
               onCancel={r.m.status === 'pending' ? () => confirmCancel(r.m.lineup1_id, r.m.id) : undefined}
               isCancelling={cancelMutation.isPending && (cancelMutation.variables as any)?.matchupId === r.m.id}
@@ -184,12 +192,13 @@ export default function MatchupsScreen() {
   );
 }
 
-function MatchupRow({ matchup, meId, onPress, onCancel, isCancelling }: {
+function MatchupRow({ matchup, meId, onPress, onCancel, isCancelling, theme }: {
   matchup: any;
   meId: string;
   onPress: () => void;
   onCancel?: () => void;
   isCancelling?: boolean;
+  theme: Theme;
 }) {
   const meIs1 = matchup.user1_id === meId;
   const opponent = meIs1 ? matchup.u2 : matchup.u1;
@@ -201,15 +210,15 @@ function MatchupRow({ matchup, meId, onPress, onCancel, isCancelling }: {
   const won = matchup.winner_user_id === meId;
 
   let chip: { label: string; color: string; bg: string } | null = null;
-  if (status === 'pending') chip = { label: 'IN QUEUE', color: HG.sky, bg: HG.skySoft };
-  else if (status === 'matched') chip = { label: 'MATCHED', color: HG.sky, bg: HG.skySoft };
-  else if (status === 'live') chip = { label: 'LIVE', color: HG.sky, bg: HG.skySoft };
-  else if (status === 'completed') chip = won ? { label: 'WIN', color: HG.sky, bg: HG.skySoft } : { label: 'LOSS', color: HG.muted, bg: 'rgba(58,58,60,0.18)' };
+  if (status === 'pending') chip = { label: 'IN QUEUE', color: theme.accent, bg: theme.accentSoft };
+  else if (status === 'matched') chip = { label: 'MATCHED', color: theme.accent, bg: theme.accentSoft };
+  else if (status === 'live') chip = { label: 'LIVE', color: theme.accent, bg: theme.accentSoft };
+  else if (status === 'completed') chip = won ? { label: 'WIN', color: theme.accent, bg: theme.accentSoft } : { label: 'LOSS', color: theme.muted, bg: 'rgba(58,58,60,0.18)' };
 
   return (
-    <Pressable onPress={onPress} style={{ marginHorizontal: 18, marginBottom: 10, padding: 16, backgroundColor: HG.surface, borderRadius: 16, borderColor: HG.hairline, borderWidth: 1 }}>
+    <Pressable onPress={onPress} style={{ marginHorizontal: 18, marginBottom: 10, padding: 16, backgroundColor: theme.surface, borderRadius: 16, borderColor: theme.hairline, borderWidth: 1 }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, letterSpacing: 0.4 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, letterSpacing: 0.4 }}>
           {fmtRelative(matchup.created_at)} · {fmtPrice(matchup.settled_wager ?? matchup.pot_amount)}
         </Text>
         {chip ? (
@@ -223,36 +232,36 @@ function MatchupRow({ matchup, meId, onPress, onCancel, isCancelling }: {
 
       <View style={{ flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' }}>
         <View style={{ flex: 1 }}>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 1, textTransform: 'uppercase' }}>You</Text>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 24, color: HG.ink, marginTop: 2, letterSpacing: -0.4 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1, textTransform: 'uppercase' }}>You</Text>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 24, color: theme.ink, marginTop: 2, letterSpacing: -0.4 }}>
             {Number(myScore ?? 0).toFixed(1)}
           </Text>
         </View>
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: HG.muted, marginHorizontal: 8 }}>vs</Text>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, marginHorizontal: 8 }}>vs</Text>
         <View style={{ flex: 1, alignItems: 'flex-end' }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             {/* V2.1 Amendment 2: opponent accent dot */}
             <View style={{ width: 6, height: 6, borderRadius: 999, backgroundColor: oppAccent }} />
-            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: HG.muted, letterSpacing: 0.4 }}>
+            <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 0.4 }}>
               {opponent?.username ?? '—'}
             </Text>
           </View>
-          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 24, color: HG.ink2, marginTop: 2, letterSpacing: -0.4 }}>
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 24, color: theme.ink2, marginTop: 2, letterSpacing: -0.4 }}>
             {Number(oppScore ?? 0).toFixed(1)}
           </Text>
         </View>
       </View>
 
       {status === 'completed' && matchup.payout_amount && won ? (
-        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: HG.sky, marginTop: 8, letterSpacing: 0.4 }}>
+        <Text style={{ fontFamily: FONT.monoMedium, fontSize: 12, color: theme.accent, marginTop: 8, letterSpacing: 0.4 }}>
           + {fmtPrice(matchup.payout_amount)} payout
         </Text>
       ) : null}
 
       {status === 'pending' && onCancel ? (
-        <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: HG.hairline, paddingTop: 10 }}>
+        <View style={{ marginTop: 12, borderTopWidth: 1, borderTopColor: theme.hairline, paddingTop: 10 }}>
           {isCancelling ? (
-            <ActivityIndicator size="small" color={HG.muted} />
+            <ActivityIndicator size="small" color={theme.muted} />
           ) : (
             <Pressable
               onPress={(e) => { e.stopPropagation?.(); onCancel(); }}
