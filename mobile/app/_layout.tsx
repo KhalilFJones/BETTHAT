@@ -82,6 +82,15 @@ function RootLayoutNav() {
   useEffect(() => {
     if (!isInitialized) return;
 
+    // app/index.tsx is the splash screen and owns its own navigation — it
+    // holds until the user taps, then routes by auth state itself. Without
+    // this exemption the `!session && !inAuthGroup` branch below would fire
+    // on every signed-out cold start and replace the splash with login
+    // before it had a chance to render.
+    // Cast: typedRoutes narrows useSegments() to the known 1-3 segment route
+    // tuples, but the root index route really does yield [] at runtime.
+    if ((segments as string[]).length === 0) return;
+
     const inAuthGroup = segments[0] === '(auth)';
     // reset-password and callback drive their own post-auth navigation (see
     // those two screens). Both legitimately establish/refresh a session while
@@ -108,6 +117,9 @@ function RootLayoutNav() {
 
   return (
     <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.bg } }}>
+      {/* Splash — dark art-directed screen, so it paints its own background
+          rather than inheriting the (light-mode white) theme surface. */}
+      <Stack.Screen name="index" options={{ animation: 'fade', contentStyle: { backgroundColor: '#0A0A0C' } }} />
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="wallet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />

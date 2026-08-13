@@ -23,15 +23,21 @@ import { FONT, fmtPrice, playerLastName, LINEUP_SIZE } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
 import { recomputeLineupCap } from '@/hooks/holygrail/lineupOps';
 
-const TIME_RANGES = ['1D', '1W', '1M', '3M', '1Y'] as const;
+const TIME_RANGES = ['1D', '1W', '1M', '3M', 'All'] as const;
 type Range = (typeof TIME_RANGES)[number];
 const RANGE_LOOKBACK_MS: Record<Range, number> = {
   '1D': 24 * 3600 * 1000,
   '1W': 7 * 24 * 3600 * 1000,
   '1M': 30 * 24 * 3600 * 1000,
   '3M': 90 * 24 * 3600 * 1000,
-  '1Y': 365 * 24 * 3600 * 1000,
+  // "All" is clamped to the oldest real tick by the graph itself, so any
+  // window wider than the price history's lifetime works here.
+  All: Number.MAX_SAFE_INTEGER,
 };
+
+// Figma one-off tones this screen needs that the shared ramp doesn't define.
+const GREY_400 = '#AAAAAC';                   // base-price + table body text
+const GAIN_WASH = 'rgba(42, 127, 59, 0.10)';  // change-pill background
 
 // Matches the "Container" shadow used across every white card in the spec
 // (shadowColor #151517 @ 5%, offset 0/2, radius 8, cornerRadius 20) — same
@@ -279,114 +285,129 @@ export default function PlayerDetailScreen() {
   const pctChange = basePrice !== 0 ? (priceChange / basePrice) * 100 : 0;
   const priceColor = pctChange >= 0 ? theme.gain : theme.danger;
 
+  const onToggleLineup = () => {
+    if (ctaDisabled) return;
+    if (isInLineup) removeMutation.mutate();
+    else addMutation.mutate();
+  };
+
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
       <StatusBar style={theme.mode === 'light' ? 'dark' : 'light'} />
 
-      {/* Top Bar */}
-      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 18, height: 54 }}>
-        <Pressable onPress={() => router.back()} hitSlop={12} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-          <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-            <Path d="m15 18-6-6 6-6" />
-          </Svg>
-        </Pressable>
-        <Text style={{ fontFamily: FONT.sansMedium, fontSize: 18, color: theme.ink, letterSpacing: -0.2 }}>Player Details</Text>
-        <Pressable
-          onPress={() => Share.share({ message: `${p.full_name} · ${fmtPrice(pp?.current_price)} on BETTHAT` })}
-          hitSlop={12}
-          style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
-            <Path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-            <Path d="M16 6l-4-4-4 4" />
-            <Path d="M12 2v13" />
-          </Svg>
-        </Pressable>
-      </View>
+      <ScrollView contentContainerStyle={{ paddingBottom: 24, gap: 8 }} showsVerticalScrollIndicator={false}>
+        {/* ═══ Top Bar card — bottom corners only, it sits flush under the
+            status bar rather than floating like the cards below it. ═══ */}
+        <View style={{ ...cardShadow(theme), backgroundColor: theme.surface, borderRadius: 0, borderBottomLeftRadius: 20, borderBottomRightRadius: 20 }}>
+          <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <RoundIconBtn theme={theme} label="Go back" onPress={() => router.back()}>
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="m15 18-6-6 6-6" />
+              </Svg>
+            </RoundIconBtn>
+            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 18, lineHeight: 23.4, color: theme.ink, letterSpacing: -0.18 }}>Player Details</Text>
+            {/* The export draws a pencil here; share is the only real action
+                this screen has, so it keeps the share glyph in that slot. */}
+            <RoundIconBtn
+              theme={theme}
+              label="Share player"
+              onPress={() => Share.share({ message: `${p.full_name} · ${fmtPrice(pp?.current_price)} on BETTHAT` })}
+            >
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink2} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+                <Path d="M16 6l-4-4-4 4" />
+                <Path d="M12 2v13" />
+              </Svg>
+            </RoundIconBtn>
+          </View>
+        </View>
 
-      <ScrollView contentContainerStyle={{ paddingBottom: 130 }} showsVerticalScrollIndicator={false}>
-        {/* Dark hero wrapper — the "Tips off" strip and the white Stock
-            Information card below it are one continuous rounded container
-            per the spec (the dark card's corners are all you see behind the
-            white card, not a separate bordered banner). Falls back to a
-            plain white card when there's no game today to count down to. */}
-        <View
-          style={{
-            marginHorizontal: 16, marginTop: 12,
-            backgroundColor: data.matchup?.tipOff ? '#151517' : theme.surface,
-            ...cardShadow(theme),
-          }}
-        >
-        <View
-          style={{
-            borderRadius: 20, overflow: 'hidden',
-            backgroundColor: data.matchup?.tipOff ? '#151517' : theme.surface,
-          }}
-        >
+        {/* ═══ Hero card — dark "Tips off" shell wrapping the white stock
+            card. Falls back to a plain white card with no game tonight. ═══ */}
+        <View style={{ backgroundColor: data.matchup?.tipOff ? '#151517' : theme.surface, ...cardShadow(theme) }}>
           {data.matchup?.tipOff ? <TipOffBanner theme={theme} tipOff={data.matchup.tipOff} /> : null}
 
-          <View style={{ backgroundColor: theme.surface, padding: 16 }}>
-            {/* Stock Information + Button */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme.surfaceSunken, alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontFamily: FONT.sansBold, fontSize: 16, color: theme.ink }}>
-                  {(p.ticker_handle ?? p.full_name ?? '?').charAt(0).toUpperCase()}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, color: theme.muted }}>
-                  {(p.ticker_handle ?? playerLastName(p)).toUpperCase()}
-                </Text>
-                <Text numberOfLines={1} style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.ink, marginTop: 2 }}>
-                  {p.full_name}
-                </Text>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 20, overflow: 'hidden' }}>
+            {/* Stock Information */}
+            <View style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 100, backgroundColor: theme.surfaceSunken, alignItems: 'center', justifyContent: 'center' }}>
+                  <Text style={{ fontFamily: FONT.sansBold, fontSize: 16, lineHeight: 24, color: theme.ink }}>
+                    {(p.ticker_handle ?? p.full_name ?? '?').charAt(0).toUpperCase()}
+                  </Text>
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.muted2 }}>
+                    {(p.ticker_handle ?? playerLastName(p)).toUpperCase()}
+                  </Text>
+                  <Text numberOfLines={1} style={{ fontFamily: FONT.sans, fontSize: 14, lineHeight: 21, color: theme.ink }}>
+                    {p.full_name}
+                  </Text>
+                </View>
               </View>
               <Pressable
-                onPress={() => {
-                  if (ctaDisabled) return;
-                  if (isInLineup) removeMutation.mutate();
-                  else addMutation.mutate();
-                }}
+                onPress={onToggleLineup}
                 disabled={ctaDisabled}
+                accessibilityLabel={isInLineup ? 'Remove from lineup' : 'Add to lineup'}
                 style={{
-                  height: 40, paddingHorizontal: 16, borderRadius: 999,
-                  flexDirection: 'row', alignItems: 'center', gap: 8,
+                  height: 40, paddingLeft: 12, paddingRight: 16, borderRadius: 100,
+                  flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
                   backgroundColor: ctaDisabled ? theme.surfaceSunken : theme.ink,
                   borderWidth: 1, borderColor: theme.hairline,
                 }}
               >
-                <Svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke={ctaDisabled ? theme.muted2 : '#FFFFFF'} strokeWidth={2} strokeLinecap="round">
+                <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={ctaDisabled ? theme.muted2 : theme.surface} strokeWidth={2} strokeLinecap="round">
                   {isInLineup ? <Path d="M5 12h14" /> : <Path d="M12 5v14M5 12h14" />}
                 </Svg>
-                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, color: ctaDisabled ? theme.muted2 : '#FFFFFF' }}>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24.8, color: ctaDisabled ? theme.muted2 : theme.surface }}>
                   {isLocked ? 'Locked' : isInLineup ? 'Remove' : isFull ? 'Full' : 'Add'}
                 </Text>
               </Pressable>
             </View>
 
             {/* Value container */}
-            <View style={{ marginTop: 18 }}>
-              <Text style={{ fontFamily: FONT.sansBold, fontSize: 32, color: theme.ink, letterSpacing: -0.3 }}>
-                {fmtPrice(pp?.current_price)}
-              </Text>
-              <Text style={{ fontFamily: FONT.sans, fontSize: 10, color: '#AAAAAC', marginTop: 2 }}>
-                Base Price {fmtPrice(basePrice)}
-              </Text>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 8 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: pctChange >= 0 ? theme.gainSoft : 'rgba(240,93,93,0.12)', borderRadius: 999, paddingVertical: 4, paddingHorizontal: 10 }}>
-                  <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, color: priceColor }}>
-                    {pctChange >= 0 ? '+' : ''}{fmtPrice(priceChange)} ({pctChange >= 0 ? '+' : ''}{pctChange.toFixed(2)}%)
-                  </Text>
+            <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 8 }}>
+              <View>
+                <Text style={{ fontFamily: FONT.sansBold, fontSize: 32, lineHeight: 41.6, color: theme.ink, letterSpacing: -0.3 }}>
+                  {fmtPrice(pp?.current_price)}
+                </Text>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 10, lineHeight: 15, color: GREY_400 }}>
+                  Base Price {fmtPrice(basePrice)}
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View
+                  style={{
+                    flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 100,
+                    paddingVertical: 4, paddingLeft: 8, paddingRight: 12,
+                    backgroundColor: pctChange >= 0 ? GAIN_WASH : 'rgba(240, 93, 93, 0.10)',
+                  }}
+                >
+                  <View style={{ width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+                    <Svg width={12} height={10} viewBox="0 0 12 10">
+                      <Path d={pctChange >= 0 ? 'M6 0 L12 10 L0 10 Z' : 'M0 0 L12 0 L6 10 Z'} fill={priceColor} />
+                    </Svg>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+                    <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, lineHeight: 21, color: priceColor }}>
+                      {fmtPrice(Math.abs(priceChange))}
+                    </Text>
+                    <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, lineHeight: 21, color: priceColor }}>
+                      ({pctChange >= 0 ? '' : '-'}{Math.abs(pctChange).toFixed(2)}%)
+                    </Text>
+                  </View>
                 </View>
-                <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.muted }}>Today</Text>
+                <Text style={{ fontFamily: FONT.sans, fontSize: 14, lineHeight: 21, color: theme.muted }}>Today</Text>
               </View>
             </View>
 
+            {/* Graph — full-bleed to the card edges per the export */}
             <PriceHistoryGraph history={data.history} theme={theme} range={range} color={priceColor} />
 
-            <TimeRangeSegments value={range} onChange={setRange} theme={theme} />
+            <View style={{ padding: 16 }}>
+              <TimeRangeSegments value={range} onChange={setRange} theme={theme} />
+            </View>
           </View>
-        </View>
         </View>
 
         {data.matchup ? <TonightsMatchupCard theme={theme} matchup={data.matchup} /> : null}
@@ -398,33 +419,44 @@ export default function PlayerDetailScreen() {
         <PriceOverviewCard theme={theme} pp={pp} history={data.history} />
       </ScrollView>
 
-      {/* Bottom Action */}
-      <View
-        style={{
-          position: 'absolute', left: 0, right: 0, bottom: 0,
-          paddingHorizontal: 18, paddingTop: 12, paddingBottom: 24,
-          backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.hairline,
-        }}
-      >
-        <Pressable
-          onPress={() => {
-            if (ctaDisabled) return;
-            if (isInLineup) removeMutation.mutate();
-            else addMutation.mutate();
-          }}
-          disabled={ctaDisabled}
-          style={{
-            height: 52, borderRadius: 999,
-            backgroundColor: ctaDisabled ? theme.surfaceSunken : theme.ink,
-            alignItems: 'center', justifyContent: 'center',
-          }}
-        >
-          <Text style={{ fontFamily: FONT.sansBold, fontSize: 14, color: ctaDisabled ? theme.muted2 : theme.bg }}>
-            {ctaLabel}
-          </Text>
-        </Pressable>
+      {/* ═══ Bottom Action ═══════════════════════════════════════════════ */}
+      <View style={{ backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.bg }}>
+        <SafeAreaView edges={['bottom']}>
+          <View style={{ padding: 16 }}>
+            <Pressable
+              onPress={onToggleLineup}
+              disabled={ctaDisabled}
+              style={{
+                height: 48, borderRadius: 100, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: ctaDisabled ? theme.surfaceSunken : theme.ink,
+              }}
+            >
+              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24.8, color: ctaDisabled ? theme.faint : theme.surface }}>
+                {ctaLabel}
+              </Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
       </View>
     </SafeAreaView>
+  );
+}
+
+/** Figma "Button/Secondary" — 40x40 pill with the Greyscale/100 hairline. */
+function RoundIconBtn({ theme, label, onPress, children }: { theme: Theme; label: string; onPress: () => void; children: React.ReactNode }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityLabel={label}
+      accessibilityRole="button"
+      hitSlop={8}
+      style={{
+        width: 40, height: 40, borderRadius: 100, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline,
+      }}
+    >
+      {children}
+    </Pressable>
   );
 }
 
@@ -445,13 +477,15 @@ function TipOffBanner({ theme, tipOff }: { theme: Theme; tipOff: string }) {
   const label = remainingMs > 0 ? `Tips off in ${h}h ${m}m ${s}s` : 'Game in progress';
 
   return (
-    <View style={{ height: 45, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
-        <Circle cx={12} cy={12} r={9} />
-        <Path d="M12 7v6l4 2" />
-      </Svg>
-      <Text style={{ flex: 1, fontFamily: FONT.sansMedium, fontSize: 14, color: '#FFFFFF' }}>{label}</Text>
-      <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+    <View style={{ paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
+          <Circle cx={12} cy={12} r={9} />
+          <Path d="M12 7v6l4 2" />
+        </Svg>
+        <Text style={{ fontFamily: FONT.sansMedium, fontSize: 14, lineHeight: 21, color: '#FFFFFF' }}>{label}</Text>
+      </View>
+      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round">
         <Circle cx={12} cy={12} r={9} />
         <Path d="M12 16v-5M12 8h.01" />
       </Svg>
@@ -470,8 +504,13 @@ function PriceHistoryGraph({
 }) {
   const [w, setW] = useState(0);
   const [touchIdx, setTouchIdx] = useState<number | null>(null);
-  const H = 160;
-  const padT = 10, padB = 22;
+  // Export: 393x220 graph box, full-bleed to the card edges, with the axis
+  // label strip below it as its own px16/py12 row.
+  // The export's line occupies y 37..168 of the 220-tall box while the
+  // gradient beneath it runs all the way to the bottom edge — hence a
+  // generous padB for the line's plot area, but an area path closed at H.
+  const H = 220;
+  const padT = 24, padB = 52;
 
   // Filter to the selected lookback window, then downsample to evenly
   // TIME-spaced points. The live-sync cron writes a tick roughly every
@@ -514,7 +553,7 @@ function PriceHistoryGraph({
     const x = (i: number) => (i / (series.length - 1)) * w;
     const y = (v: number) => padT + innerH - ((v - min) / (max - min || 1)) * innerH;
     const line = series.map((h, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(h.price).toFixed(1)}`).join(' ');
-    const area = `${line} L${x(series.length - 1).toFixed(1)},${(H - padB).toFixed(1)} L0,${(H - padB).toFixed(1)} Z`;
+    const area = `${line} L${x(series.length - 1).toFixed(1)},${H} L0,${H} Z`;
     const gridVals = [0, 0.25, 0.5, 0.75, 1].map((f) => max - f * (max - min));
     return { x, y, line, area, gridVals };
   }, [w, series]);
@@ -548,7 +587,7 @@ function PriceHistoryGraph({
 
   if (series.length < 2) {
     return (
-      <View style={{ height: H, alignItems: 'center', justifyContent: 'center', marginTop: 16 }}>
+      <View style={{ height: H, alignItems: 'center', justifyContent: 'center' }}>
         <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.muted }}>No price history yet.</Text>
       </View>
     );
@@ -566,15 +605,28 @@ function PriceHistoryGraph({
   // whichever moment has the most raw ticks.
   const axisLabelIdxs = [0, 1, 2, 3, 4].map((i) => Math.round((i / 4) * (series.length - 1)));
 
+  // Tooltip reads the move from the start of the visible window to the point
+  // under the finger — that's what the pill's % chip means in the export.
+  const windowStart = series[0].price;
+  const activePrice = series[activeIdx].price;
+  const activePct = windowStart !== 0 ? ((activePrice - windowStart) / windowStart) * 100 : 0;
+  const activeColor = activePct >= 0 ? theme.gain : theme.danger;
+  const TOOLTIP_W = 150;
+  // The axis label nearest the indicator is the emphasized one in the export.
+  const activeLabelIdx = axisLabelIdxs.reduce(
+    (best, idx, i) => (Math.abs(idx - activeIdx) < Math.abs(axisLabelIdxs[best] - activeIdx) ? i : best),
+    0,
+  );
+
   return (
-    <View style={{ marginTop: 16 }}>
+    <View>
       <View onLayout={(e) => setW(e.nativeEvent.layout.width)} style={{ height: H }} {...panResponder.panHandlers}>
         {geom && w > 0 && (
           <>
             <Svg width={w} height={H}>
               <Defs>
                 <LinearGradient id="playerPriceGrad" x1="0" y1="0" x2="0" y2="1">
-                  <Stop offset="0" stopColor={color} stopOpacity={0.35} />
+                  <Stop offset="0" stopColor={color} stopOpacity={0.4} />
                   <Stop offset="1" stopColor={color} stopOpacity={0} />
                 </LinearGradient>
               </Defs>
@@ -583,36 +635,66 @@ function PriceHistoryGraph({
               ))}
               <Path d={geom.area} fill="url(#playerPriceGrad)" />
               <Path d={geom.line} stroke={color} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              {touchIdx != null && (
-                <Line x1={ix} y1={0} x2={ix} y2={H - padB} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="3 4" />
-              )}
+              {/* The export shows the scrub line + dot at rest too, not only
+                  while dragging — it anchors the tooltip pill above it. */}
+              <Line x1={ix} y1={padT} x2={ix} y2={H} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="3 4" />
               <Circle cx={ix} cy={iy} r={6} fill={color} />
               <Circle cx={ix} cy={iy} r={4} fill={theme.surface} />
             </Svg>
 
-            {/* Floating value tooltip */}
+            {/* Floating value pill */}
             <View
               pointerEvents="none"
               style={{
                 position: 'absolute', top: 0,
-                left: Math.max(0, Math.min(w - 96, ix - 48)),
-                backgroundColor: theme.ink, borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10,
+                left: Math.max(8, Math.min(w - TOOLTIP_W - 8, ix - TOOLTIP_W / 2)),
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                paddingVertical: 4, paddingLeft: 12, paddingRight: 4,
+                backgroundColor: theme.surface, borderRadius: 100,
+                borderWidth: 1, borderColor: theme.hairline,
               }}
             >
-              <Text style={{ fontFamily: FONT.sansBold, fontSize: 12, color: theme.bg, textAlign: 'center' }}>
-                {fmtPrice(series[activeIdx].price)}
+              <Text style={{ fontFamily: FONT.sansBold, fontSize: 12, lineHeight: 18, color: theme.ink }}>
+                {fmtPrice(activePrice)}
               </Text>
+              <View
+                style={{
+                  flexDirection: 'row', alignItems: 'center', gap: 2, borderRadius: 100,
+                  paddingVertical: 4, paddingLeft: 6, paddingRight: 8,
+                  backgroundColor: activePct >= 0 ? GAIN_WASH : 'rgba(240, 93, 93, 0.10)',
+                }}
+              >
+                <View style={{ width: 14, height: 14, alignItems: 'center', justifyContent: 'center' }}>
+                  <Svg width={10.5} height={8.75} viewBox="0 0 12 10">
+                    <Path d={activePct >= 0 ? 'M6 0 L12 10 L0 10 Z' : 'M0 0 L12 0 L6 10 Z'} fill={activeColor} />
+                  </Svg>
+                </View>
+                <Text style={{ fontFamily: FONT.sansMedium, fontSize: 12, lineHeight: 18, color: activeColor }}>
+                  {Math.abs(activePct).toFixed(2)}%
+                </Text>
+              </View>
             </View>
           </>
         )}
       </View>
+
       {/* Time-of-day / date axis labels */}
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
-        {axisLabelIdxs.map((idx, i) => (
-          <Text key={i} style={{ fontFamily: FONT.mono, fontSize: 9, color: theme.muted2 }}>
-            {formatAxisLabel(series[idx].at, isTimeOfDay)}
-          </Text>
-        ))}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 12 }}>
+        {axisLabelIdxs.map((idx, i) => {
+          const on = i === activeLabelIdx;
+          return (
+            <Text
+              key={i}
+              style={{
+                fontFamily: on ? FONT.sansMedium : FONT.sans,
+                fontSize: 12, lineHeight: 18,
+                color: on ? theme.ink : theme.muted,
+              }}
+            >
+              {formatAxisLabel(series[idx].at, isTimeOfDay)}
+            </Text>
+          );
+        })}
       </View>
     </View>
   );
@@ -626,12 +708,20 @@ function formatAxisLabel(iso: string, timeOfDay: boolean): string {
 
 function TimeRangeSegments({ value, onChange, theme }: { value: Range; onChange: (r: Range) => void; theme: Theme }) {
   return (
-    <View style={{ marginTop: 14, flexDirection: 'row', backgroundColor: theme.surfaceSunken, borderRadius: 999, padding: 2 }}>
+    <View style={{ flexDirection: 'row', backgroundColor: theme.surfaceSunken, borderRadius: 100, overflow: 'hidden' }}>
       {TIME_RANGES.map((r) => {
         const active = r === value;
         return (
-          <Pressable key={r} onPress={() => onChange(r)} style={{ flex: 1, paddingVertical: 7, borderRadius: 999, alignItems: 'center', backgroundColor: active ? theme.surface : 'transparent', borderWidth: active ? 1 : 0, borderColor: theme.hairline }}>
-            <Text style={{ fontFamily: active ? FONT.sansMedium : FONT.sans, fontSize: 12, color: active ? theme.ink : theme.muted }}>{r}</Text>
+          <Pressable
+            key={r}
+            onPress={() => onChange(r)}
+            style={{
+              flex: 1, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 100, alignItems: 'center', justifyContent: 'center',
+              backgroundColor: active ? theme.surface : 'transparent',
+              borderWidth: active ? 1 : 0, borderColor: theme.hairline,
+            }}
+          >
+            <Text style={{ fontFamily: active ? FONT.sansMedium : FONT.sans, fontSize: 14, lineHeight: 21.7, color: active ? theme.ink : theme.muted }}>{r}</Text>
           </Pressable>
         );
       })}
@@ -650,21 +740,35 @@ function TonightsMatchupCard({
   matchup: { isHome: boolean; oppFullName: string; tipOff: string | null; oppRecord: string | null };
 }) {
   return (
-    <View style={{ marginHorizontal: 16, marginTop: 12, padding: 16, backgroundColor: theme.surface, ...cardShadow(theme) }}>
-      <Text style={{ fontFamily: FONT.sansBold, fontSize: 15, color: theme.ink, marginBottom: 10 }}>Tonight's Matchup</Text>
-      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 1, textTransform: 'uppercase' }}>
-        {matchup.isHome ? 'Home' : 'Away'}
-      </Text>
-      <Text style={{ fontFamily: FONT.sansMedium, fontSize: 15, color: theme.ink, marginTop: 2 }}>
-        vs. {matchup.oppFullName}{matchup.oppRecord ? ` (${matchup.oppRecord})` : ''}
-      </Text>
-      {matchup.tipOff ? (
-        <Text style={{ fontFamily: FONT.mono, fontSize: 12, color: theme.muted, marginTop: 6 }}>
-          {new Date(matchup.tipOff).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} ET
+    <View style={{ padding: 16, gap: 8, backgroundColor: theme.surface, ...cardShadow(theme) }}>
+      <Text style={sectionTitle(theme)}>Tonight's Matchup</Text>
+      <View>
+        <Text style={{ fontFamily: FONT.sans, fontSize: 16, lineHeight: 24, color: theme.muted }}>
+          {matchup.isHome ? 'Home' : 'Away'}
         </Text>
-      ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <Text style={{ flex: 1, fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>
+            vs. {matchup.oppFullName}
+          </Text>
+          {matchup.tipOff ? (
+            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink, textAlign: 'right' }}>
+              {new Date(matchup.tipOff).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} ET
+            </Text>
+          ) : null}
+        </View>
+        {matchup.oppRecord ? (
+          <Text style={{ fontFamily: FONT.sans, fontSize: 12, lineHeight: 16, letterSpacing: 0.4, color: theme.muted }}>
+            ({matchup.oppRecord.replace('-', ' - ')})
+          </Text>
+        ) : null}
+      </View>
     </View>
   );
+}
+
+/** Figma card headline — Body/Large/Semibold, 18/27. */
+function sectionTitle(theme: Theme) {
+  return { fontFamily: FONT.sansBold, fontSize: 18, lineHeight: 27, color: theme.ink } as const;
 }
 
 // =============================================================================
@@ -679,7 +783,6 @@ interface Last5Row { date: string | null; opp: string; pts: number; reb: number;
 // 500/600/700/800/900).
 const GRAPH_TEAL = '#47ADA6';
 const GREY_300 = '#C4C4C5';
-const GREY_400 = '#AAAAAC';
 
 function Last5GamesCard({ theme, rows, seasonAvg }: { theme: Theme; rows: Last5Row[]; seasonAvg: number }) {
   const chrono = [...rows].reverse(); // oldest → newest, G1..G5
@@ -689,17 +792,20 @@ function Last5GamesCard({ theme, rows, seasonAvg }: { theme: Theme; rows: Last5R
   // the line (each game's FP as a % of season average) share the same 6
   // gridline rows but read off two different scales.
   const maxFp = Math.max(10, Math.ceil(Math.max(...chrono.map((r) => r.fp), 1) / 10) * 10);
-  const W = 320, H = 190, padB = 24, padT = 10, padL = 28, padR = 32;
+  // Geometry lifted 1:1 from the export's 361x168 chart: 48px label gutters
+  // either side leave a 265-wide plot area at y 9..159, with five 20px bars
+  // distributed space-between across it.
+  const W = 361, H = 168, padT = 9, padB = 9, padL = 48, padR = 48;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const gap = innerW / chrono.length;
-  const barW = gap * 0.42;
-  const barX = (i: number) => padL + i * gap + (gap - barW) / 2;
+  const barW = 20;
+  const barStep = chrono.length > 1 ? (innerW - barW) / (chrono.length - 1) : 0;
+  const barX = (i: number) => padL + i * barStep;
   const yForFp = (v: number) => padT + innerH * (1 - v / maxFp);
   const barH = (v: number) => innerH - (yForFp(v) - padT);
   const yForPct = (pct: number) => padT + innerH * (1 - pct / 100);
   const ratio = (fp: number) => (seasonAvg > 0 ? Math.min(200, (fp / seasonAvg) * 100) : 0);
-  const dotCx = (i: number) => padL + i * gap + gap / 2;
+  const dotCx = (i: number) => barX(i) + barW / 2;
   const linePath = chrono.map((r, i) => `${i === 0 ? 'M' : 'L'}${dotCx(i).toFixed(1)},${yForPct(ratio(r.fp)).toFixed(1)}`).join(' ');
 
   const avg = (key: keyof Last5Row) => (chrono.reduce((s, r) => s + Number(r[key] ?? 0), 0) / chrono.length);
@@ -713,80 +819,113 @@ function Last5GamesCard({ theme, rows, seasonAvg }: { theme: Theme; rows: Last5R
   }));
 
   return (
-    <View style={{ marginHorizontal: 16, marginTop: 12, padding: 16, backgroundColor: theme.surface, ...cardShadow(theme) }}>
-      <Text style={{ fontFamily: FONT.sansBold, fontSize: 15, color: theme.ink, marginBottom: 4 }}>Last 5 Games</Text>
+    <View style={{ padding: 16, gap: 16, alignItems: 'center', backgroundColor: theme.surface, ...cardShadow(theme) }}>
+      <Text style={[sectionTitle(theme), { alignSelf: 'stretch' }]}>Last 5 Games</Text>
 
-      {/* Legend — yellow (bars) = Fantasy Avg, teal (line) = Season Average Ratio */}
-      <View style={{ flexDirection: 'row', gap: 16, marginBottom: 8 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent }} />
-          <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.ink }}>Fantasy Avg</Text>
+      <View style={{ alignSelf: 'stretch', gap: 1 }}>
+        <View style={{ width: '100%', aspectRatio: W / H }}>
+          <Svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}>
+            {gridRows.map((g, i) => (
+              <React.Fragment key={i}>
+                <Line x1={padL} y1={g.y} x2={W - padR} y2={g.y} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="3 4" />
+                <SvgText x={padL - 12} y={g.y + 4.5} fontSize={12} fontFamily={FONT.sans} fill={theme.muted2} textAnchor="end">{g.fLabel}</SvgText>
+                <SvgText x={W - padR + 12} y={g.y + 4.5} fontSize={12} fontFamily={FONT.sans} fill={theme.muted2}>{g.pctLabel}</SvgText>
+              </React.Fragment>
+            ))}
+            {chrono.map((r, i) => (
+              <Rect key={i} x={barX(i)} y={yForFp(r.fp)} width={barW} height={Math.max(1, barH(r.fp))} rx={4} fill={theme.accent} />
+            ))}
+            <Path d={linePath} stroke={GRAPH_TEAL} strokeWidth={1.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            {chrono.map((r, i) => (
+              <React.Fragment key={i}>
+                <Circle cx={dotCx(i)} cy={yForPct(ratio(r.fp))} r={4} fill={theme.surface} />
+                <Circle cx={dotCx(i)} cy={yForPct(ratio(r.fp))} r={3} fill={GRAPH_TEAL} />
+              </React.Fragment>
+            ))}
+          </Svg>
         </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: GRAPH_TEAL }} />
-          <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.ink }}>Season Average Ratio</Text>
+        <View style={{ flexDirection: 'row', paddingHorizontal: 35, justifyContent: 'space-between' }}>
+          {chrono.map((_, i) => (
+            <Text key={i} style={{ fontFamily: FONT.sans, fontSize: 12, lineHeight: 18, color: theme.muted2 }}>G{i + 1}</Text>
+          ))}
         </View>
       </View>
 
-      <View style={{ width: '100%', aspectRatio: W / H }}>
-        <Svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`}>
-          {gridRows.map((g, i) => (
-            <React.Fragment key={i}>
-              <Line x1={padL} y1={g.y} x2={W - padR} y2={g.y} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="3 4" />
-              <SvgText x={padL - 6} y={g.y + 3.5} fontSize={9} fontFamily={FONT.mono} fill={theme.muted2} textAnchor="end">{g.fLabel}</SvgText>
-              <SvgText x={W - padR + 6} y={g.y + 3.5} fontSize={9} fontFamily={FONT.mono} fill={theme.muted2}>{g.pctLabel}</SvgText>
-            </React.Fragment>
-          ))}
-          {chrono.map((r, i) => (
-            <Rect key={i} x={barX(i)} y={yForFp(r.fp)} width={barW} height={Math.max(1, barH(r.fp))} rx={3} fill={theme.accent} />
-          ))}
-          <Path d={linePath} stroke={GRAPH_TEAL} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-          {chrono.map((r, i) => (
-            <Circle key={i} cx={dotCx(i)} cy={yForPct(ratio(r.fp))} r={3.5} fill={GRAPH_TEAL} />
-          ))}
-        </Svg>
-      </View>
-      <View style={{ flexDirection: 'row', paddingLeft: 28, paddingRight: 32, justifyContent: 'space-around', marginTop: 2 }}>
-        {chrono.map((_, i) => (
-          <Text key={i} style={{ fontFamily: FONT.mono, fontSize: 9, color: theme.muted2 }}>G{i + 1}</Text>
-        ))}
+      {/* Legend pill — sits below the chart in the export, not above it */}
+      <View style={{ flexDirection: 'row', gap: 16, backgroundColor: theme.surfaceSunken, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 4 }}>
+        <LegendDot theme={theme} color={theme.accent} label="Fantasy Avg" />
+        <LegendDot theme={theme} color={GRAPH_TEAL} label="Season Average Ratio" />
       </View>
 
       {/* Stats table */}
-      <View style={{ marginTop: 16 }}>
-        <View style={{ flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 8 }}>
-          {['DATE', 'OPP', 'PTS', 'REB', 'AST', 'STL', 'TO', 'FP'].map((h) => (
-            <Text key={h} style={{ flex: h === 'DATE' ? 1.4 : 1, fontFamily: FONT.sans, fontSize: 9, color: GREY_300, textAlign: h === 'DATE' || h === 'OPP' ? 'left' : 'right' }}>
-              {h}
-            </Text>
-          ))}
-        </View>
+      <View style={{ alignSelf: 'stretch', gap: 12 }}>
+        <StatRow
+          theme={theme}
+          cells={['DATE', 'OPP', 'PTS', 'REB', 'AST', 'STL', 'TO', 'FP']}
+          color={GREY_300}
+        />
         {rows.map((r, i) => (
-          <View key={i} style={{ flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 9, borderTopWidth: 1, borderColor: theme.hairline }}>
-            <Text style={{ flex: 1.4, fontFamily: FONT.sans, fontSize: 11, color: GREY_400 }}>
-              {r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—'}
-            </Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink }}>{r.opp}</Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sans, fontSize: 11, color: GREY_400, textAlign: 'right' }}>{r.pts}</Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sans, fontSize: 11, color: GREY_400, textAlign: 'right' }}>{r.reb}</Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sans, fontSize: 11, color: GREY_400, textAlign: 'right' }}>{r.ast}</Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sans, fontSize: 11, color: GREY_400, textAlign: 'right' }}>{r.stl}</Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sans, fontSize: 11, color: GREY_400, textAlign: 'right' }}>{r.to}</Text>
-            <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: GREY_400, textAlign: 'right' }}>{r.fp.toFixed(1)}</Text>
-          </View>
+          <StatRow
+            key={i}
+            theme={theme}
+            cells={[
+              r.date ? new Date(r.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '—',
+              r.opp,
+              String(r.pts), String(r.reb), String(r.ast), String(r.stl), String(r.to),
+              r.fp.toFixed(1),
+            ]}
+            color={GREY_400}
+            boldCols={[1, 7]}
+            inkCols={[1]}
+          />
         ))}
-        {/* Bolded Avg row */}
-        <View style={{ flexDirection: 'row', paddingHorizontal: 10, paddingVertical: 9, borderTopWidth: 1, borderColor: theme.hairline }}>
-          <Text style={{ flex: 1.4, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink }}>Avg</Text>
-          <Text style={{ flex: 1, fontFamily: FONT.sans, fontSize: 11 }} />
-          <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink, textAlign: 'right' }}>{avg('pts').toFixed(1)}</Text>
-          <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink, textAlign: 'right' }}>{avg('reb').toFixed(1)}</Text>
-          <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink, textAlign: 'right' }}>{avg('ast').toFixed(1)}</Text>
-          <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink, textAlign: 'right' }}>{avg('stl').toFixed(1)}</Text>
-          <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink, textAlign: 'right' }}>{avg('to').toFixed(1)}</Text>
-          <Text style={{ flex: 1, fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink, textAlign: 'right' }}>{avg('fp').toFixed(1)}</Text>
-        </View>
+        <StatRow
+          theme={theme}
+          cells={['Avg', '', avg('pts').toFixed(1), avg('reb').toFixed(1), avg('ast').toFixed(1), avg('stl').toFixed(1), avg('to').toFixed(1), avg('fp').toFixed(1)]}
+          color={theme.ink}
+          boldCols={[0, 1, 2, 3, 4, 5, 6, 7]}
+        />
       </View>
+    </View>
+  );
+}
+
+function LegendDot({ theme, color, label }: { theme: Theme; color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ width: 8, height: 8, borderRadius: 100, backgroundColor: color, borderWidth: 1.5, borderColor: theme.surface }} />
+      <Text style={{ fontFamily: FONT.sans, fontSize: 12, lineHeight: 18, color: theme.ink }}>{label}</Text>
+    </View>
+  );
+}
+
+// Column widths from the export's 361-wide grid: DATE 44 · OPP 54 · then a
+// 235-wide group holding PTS/REB/AST/STL/TO/FP. Borderless — rows are
+// separated by the 12px stack gap alone.
+const STAT_FLEX = [44, 54, 40, 38, 38, 38, 33, 38];
+
+function StatRow({
+  theme, cells, color, boldCols, inkCols,
+}: {
+  theme: Theme; cells: string[]; color: string; boldCols?: number[]; inkCols?: number[];
+}) {
+  return (
+    <View style={{ flexDirection: 'row', alignSelf: 'stretch' }}>
+      {cells.map((c, i) => (
+        <Text
+          key={i}
+          numberOfLines={1}
+          style={{
+            flex: STAT_FLEX[i],
+            fontFamily: boldCols?.includes(i) ? FONT.sansBold : FONT.sans,
+            fontSize: 10, lineHeight: 15,
+            color: inkCols?.includes(i) ? theme.ink : color,
+            textAlign: i <= 1 ? 'left' : 'center',
+          }}
+        >
+          {c}
+        </Text>
+      ))}
     </View>
   );
 }
@@ -823,18 +962,20 @@ function PriceOverviewCard({
     ['Open', fmtPrice(open)],
     ['High', fmtPrice(high)],
     ['Low', fmtPrice(low)],
-    ['Volume', String(volume)],
+    ['Volume (24h)', String(volume)],
     ['Market Cap', fmtPrice(marketCap)],
   ];
 
+  // Two 180-wide columns, label stacked over value — not a right-aligned
+  // key/value row. Matches the export's wrap grid.
   return (
-    <View style={{ marginHorizontal: 16, marginTop: 12, marginBottom: 8, padding: 16, backgroundColor: theme.surface, ...cardShadow(theme) }}>
-      <Text style={{ fontFamily: FONT.sansBold, fontSize: 15, color: theme.ink, marginBottom: 10 }}>Price Overview</Text>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+    <View style={{ padding: 16, gap: 8, backgroundColor: theme.surface, ...cardShadow(theme) }}>
+      <Text style={sectionTitle(theme)}>Price Overview</Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 8 }}>
         {rows.map(([label, value]) => (
-          <View key={label} style={{ width: '50%', flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, paddingRight: 8 }}>
-            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted }}>{label}</Text>
-            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.ink }}>{value}</Text>
+          <View key={label} style={{ width: '50%', paddingRight: 8 }}>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 16, lineHeight: 24, color: theme.muted }}>{label}</Text>
+            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>{value}</Text>
           </View>
         ))}
       </View>

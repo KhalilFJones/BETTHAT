@@ -88,6 +88,9 @@ export interface MarketData {
   history: Map<string, number[]>;
   lineup: InProgressLineup | null;
   trending: TrendingRow[];
+  /** player_id → fantasy points for their last 5 final games, newest first.
+   *  Drives the five form dots on the Draft Market player cards. */
+  form: Map<string, number[]>;
 }
 
 async function fetchMarket(userId: string, slateDate: string): Promise<MarketData> {
@@ -113,7 +116,12 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     .map((row) => row.nba_players?.id)
     .filter(Boolean);
 
-  const [historyQ, lineupQ, trendingQ] = await Promise.all([
+  // Three weeks back comfortably covers 5 games for any rotation player while
+  // keeping the row count bounded — an unbounded fetch over every player on
+  // the slate would pull the whole season.
+  const formSince = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+
+  const [historyQ, lineupQ, trendingQ, formQ] = await Promise.all([
     supabase
       .from('price_history')
       .select('player_id, price, recorded_at')
@@ -146,6 +154,16 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
           .order('demand_count_1h', { ascending: false })
           .limit(8)
       : Promise.resolve({ data: [], error: null }),
+
+    tonightPlayerIds.length > 0
+      ? supabase
+          .from('player_game_stats')
+          .select('player_id, fantasy_points, nba_games!inner(game_date)')
+          .in('player_id', tonightPlayerIds)
+          .eq('is_final', true)
+          .gte('nba_games.game_date', formSince)
+          .order('game_date', { foreignTable: 'nba_games', ascending: false })
+      : Promise.resolve({ data: [], error: null }),
   ]);
 
   // tonightQ is the primary data source — if it fails, there is no roster to
@@ -155,7 +173,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
   // slate and hides real outages from users and QA.
   if (tonightQ.error) throw tonightQ.error;
 
-  const errs = [historyQ.error, lineupQ.error, trendingQ.error].filter(Boolean);
+  const errs = [historyQ.error, lineupQ.error, trendingQ.error, formQ.error].filter(Boolean);
   if (errs.length) {
     // These are secondary/enrichment queries (sparklines, in-progress lineup,
     // trending) — partial data (an empty sparkline, no sticky lineup bar) is
@@ -171,6 +189,15 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     history.set(h.player_id, arr);
   }
 
+  // Rows arrive newest-first, so the first 5 seen per player are their last 5.
+  const form = new Map<string, number[]>();
+  for (const r of (formQ.data ?? []) as Array<{ player_id: string; fantasy_points: number | null }>) {
+    const arr = form.get(r.player_id) ?? [];
+    if (arr.length >= 5) continue;
+    arr.push(Number(r.fantasy_points ?? 0));
+    form.set(r.player_id, arr);
+  }
+
   return {
     tonight: (((tonightQ.data ?? []) as unknown) as Array<{
       nba_players: PlayerMarketRow;
@@ -183,6 +210,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     history,
     lineup: (lineupQ.data ?? null) as unknown as InProgressLineup | null,
     trending: ((trendingQ.data ?? []) as unknown) as TrendingRow[],
+    form,
   };
 }
 

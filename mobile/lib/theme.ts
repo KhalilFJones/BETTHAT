@@ -33,6 +33,7 @@ export interface Theme {
   ink2: string;   // section headers      (Greyscale/700 #3F3F43)
   muted: string;  // secondary text       (Greyscale/600 #67676A)
   muted2: string; // faint / axis labels  (Greyscale/500 #8A8A8E)
+  faint: string;  // de-emphasized labels + disabled field text (Greyscale/300 #C4C4C5)
 
   // Accent — YELLOW is the single brand accent in both modes (Primary/400).
   accent: string;     // fills: active nav, W badges, progress, chart line
@@ -83,6 +84,7 @@ export const LIGHT: Theme = {
   ink2: '#3F3F43',
   muted: '#67676A',
   muted2: '#8A8A8E',
+  faint: '#C4C4C5',
 
   accent: ACCENT,
   accentSoft: 'rgba(240, 246, 0, 0.16)',
@@ -117,6 +119,7 @@ export const DARK: Theme = {
   ink2: '#C2C8D0',
   muted: '#8A93A6',
   muted2: '#5C6473',
+  faint: '#464C57', // one step below muted2 — same role as light's Greyscale/300
 
   accent: ACCENT,
   accentSoft: 'rgba(240, 246, 0, 0.14)',
