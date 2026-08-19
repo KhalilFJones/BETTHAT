@@ -2720,6 +2720,190 @@ export type Database = {
           },
         ]
       }
+      user_follows: {
+        Row: {
+          created_at: string
+          follower_id: string
+          following_id: string
+        }
+        Insert: {
+          created_at?: string
+          follower_id: string
+          following_id: string
+        }
+        Update: {
+          created_at?: string
+          follower_id?: string
+          following_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_follows_follower_id_fkey"
+            columns: ["follower_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_follows_following_id_fkey"
+            columns: ["following_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      social_posts: {
+        Row: {
+          attachment_at: string | null
+          attachment_kind: string | null
+          allow_comments: boolean
+          attachment_price: number | null
+          audience: string
+          body: string | null
+          created_at: string
+          gif_url: string | null
+          id: string
+          matchup_id: string | null
+          matchup_snapshot: Json | null
+          player_id: string | null
+          share_count: number
+          user_id: string
+        }
+        Insert: {
+          attachment_at?: string | null
+          attachment_kind?: string | null
+          allow_comments?: boolean
+          attachment_price?: number | null
+          audience?: string
+          body?: string | null
+          created_at?: string
+          gif_url?: string | null
+          id?: string
+          matchup_id?: string | null
+          matchup_snapshot?: Json | null
+          player_id?: string | null
+          share_count?: number
+          user_id: string
+        }
+        Update: {
+          attachment_at?: string | null
+          attachment_kind?: string | null
+          allow_comments?: boolean
+          attachment_price?: number | null
+          audience?: string
+          body?: string | null
+          created_at?: string
+          gif_url?: string | null
+          id?: string
+          matchup_id?: string | null
+          matchup_snapshot?: Json | null
+          player_id?: string | null
+          share_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_posts_matchup_id_fkey"
+            columns: ["matchup_id"]
+            isOneToOne: false
+            referencedRelation: "matchups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_posts_player_id_fkey"
+            columns: ["player_id"]
+            isOneToOne: false
+            referencedRelation: "nba_players"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_posts_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      social_post_likes: {
+        Row: {
+          created_at: string
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_post_likes_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "social_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_post_likes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      social_post_comments: {
+        Row: {
+          body: string | null
+          created_at: string
+          gif_url: string | null
+          id: string
+          parent_id: string | null
+          post_id: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          gif_url?: string | null
+          id?: string
+          parent_id?: string | null
+          post_id: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          gif_url?: string | null
+          id?: string
+          parent_id?: string | null
+          post_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "social_post_comments_post_id_fkey"
+            columns: ["post_id"]
+            isOneToOne: false
+            referencedRelation: "social_posts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "social_post_comments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_promo_redemptions: {
         Row: {
           created_at: string

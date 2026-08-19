@@ -1,4 +1,4 @@
-import { Tabs, useRouter } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { View, Pressable } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
@@ -12,10 +12,10 @@ import { useAuthStore } from '@/stores/auth.store';
 // yellow (#F0F600) circle when focused; inactive icons are the outline
 // variant in Greyscale/500 (#8A8A8E).
 //
-// Order per Figma: Home · Market (globe) · Notifications (bell) ·
-// Matchups (pie-chart) · Profile (user). Notifications isn't a tab content
-// screen — it's a stacked push (app/notifications.tsx) — so it's rendered
-// as a plain nav button rather than a Tabs.Screen.
+// Order per Figma: Home · Market (globe) · Social (chat) · Matchups
+// (pie-chart) · Profile (user). The centre slot used to be a plain push
+// button for Notifications; the Social Feed took it over, so notifications
+// now hangs off the Home screen header (see ScreenHeader's `leftAction`).
 //
 // Underlying file `lineup.tsx` is the Market route, kept to avoid breaking
 // existing deep links.
@@ -68,7 +68,6 @@ function NavIcon({
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const { profile } = useAuthStore();
 
   // Live badge on Matchups tab when the user has an active/in-progress matchup.
@@ -81,22 +80,6 @@ export default function TabLayout() {
         .select('id', { count: 'exact', head: true })
         .or(`user1_id.eq.${profile.id},user2_id.eq.${profile.id}`)
         .in('status', ['matched', 'in_progress', 'live']);
-      return (count ?? 0) > 0;
-    },
-    enabled: !!profile?.id,
-    refetchInterval: 30_000,
-  });
-
-  // Unread badge on the Notifications button.
-  const { data: hasUnread } = useQuery({
-    queryKey: ['has-unread-notifications', profile?.id],
-    queryFn: async () => {
-      if (!profile?.id) return false;
-      const { count } = await supabase
-        .from('notifications')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', profile.id)
-        .eq('is_read', false);
       return (count ?? 0) > 0;
     },
     enabled: !!profile?.id,
@@ -164,15 +147,7 @@ export default function TabLayout() {
           >
             {renderTab('home', { outline: 'home-outline', filled: 'home' })}
             {renderTab('lineup', { outline: 'globe-outline', filled: 'globe' })}
-            <Pressable
-              key="notifications"
-              accessibilityRole="button"
-              accessibilityLabel="Notifications"
-              onPress={() => router.push('/notifications' as any)}
-              style={{ width: BUTTON, height: BUTTON, alignItems: 'center', justifyContent: 'center' }}
-            >
-              <NavIcon outlineName="notifications-outline" filledName="notifications" focused={false} badge={!!hasUnread} />
-            </Pressable>
+            {renderTab('social', { outline: 'chatbubble-ellipses-outline', filled: 'chatbubble-ellipses' })}
             {renderTab('matchups', { outline: 'pie-chart-outline', filled: 'pie-chart' }, !!hasLive)}
             {renderTab('profile', { outline: 'person-outline', filled: 'person' })}
           </View>
@@ -181,6 +156,7 @@ export default function TabLayout() {
     >
       <Tabs.Screen name="home" options={{ title: 'Home' }} />
       <Tabs.Screen name="lineup" options={{ title: 'Market' }} />
+      <Tabs.Screen name="social" options={{ title: 'Social' }} />
       <Tabs.Screen name="matchups" options={{ title: 'Matchups' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
     </Tabs>

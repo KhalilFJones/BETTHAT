@@ -35,6 +35,11 @@ export interface Theme {
   muted2: string; // faint / axis labels  (Greyscale/500 #8A8A8E)
   faint: string;  // de-emphasized labels + disabled field text (Greyscale/300 #C4C4C5)
 
+  // Inline accent-coloured text (social-feed tickers / prices). NOT the raw
+  // accent in light mode: #F0F600 on white is ~1.5:1 and unreadable as body
+  // copy, so light gets a darkened accent that still reads as the brand.
+  accentInk: string;
+
   // Accent — YELLOW is the single brand accent in both modes (Primary/400).
   accent: string;     // fills: active nav, W badges, progress, chart line
   accentSoft: string; // low-alpha wash
@@ -85,6 +90,7 @@ export const LIGHT: Theme = {
   muted: '#67676A',
   muted2: '#8A8A8E',
   faint: '#C4C4C5',
+  accentInk: '#7C8100',
 
   accent: ACCENT,
   accentSoft: 'rgba(240, 246, 0, 0.16)',
@@ -120,6 +126,7 @@ export const DARK: Theme = {
   muted: '#8A93A6',
   muted2: '#5C6473',
   faint: '#464C57', // one step below muted2 — same role as light's Greyscale/300
+  accentInk: ACCENT,
 
   accent: ACCENT,
   accentSoft: 'rgba(240, 246, 0, 0.14)',

@@ -125,10 +125,14 @@ function RootLayoutNav() {
       <Stack.Screen name="wallet" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="wallet/deposit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="wallet/withdraw" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="social/compose" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+      <Stack.Screen name="social/connections" options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="player/[id]" options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="matchup/[id]" options={{ presentation: 'card' }} />
       <Stack.Screen name="matchup/create" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
       <Stack.Screen name="matchup/found/[id]" options={{ presentation: 'card', animation: 'fade' }} />
+      {/* Settlement moment — its own art-directed screen, fades in over the board. */}
+      <Stack.Screen name="matchup/result/[id]" options={{ presentation: 'card', animation: 'fade' }} />
       <Stack.Screen name="settings" options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="settings/deposit-limit" options={{ presentation: 'card', animation: 'slide_from_right' }} />
       <Stack.Screen name="settings/payout-methods" options={{ presentation: 'card', animation: 'slide_from_right' }} />

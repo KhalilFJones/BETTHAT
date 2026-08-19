@@ -2,6 +2,7 @@
 // BETTHAT — Notifications (Holy Grail V2, Screen 12)
 // =============================================================================
 
+import { useState } from 'react';
 import { View, Text, FlatList, Pressable, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -12,6 +13,10 @@ import { useAuthStore } from '@/stores/auth.store';
 import { FONT, fmtRelative } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
 import type { UserNotification } from '@/lib/database.types';
+
+const ACTIVITY_TYPES = ['follow', 'post_like', 'post_comment'] as const;
+
+type Filter = 'all' | 'activity';
 
 export default function NotificationsScreen() {
   const theme = useTheme();
@@ -62,7 +67,18 @@ export default function NotificationsScreen() {
     },
   });
 
+  const [filter, setFilter] = useState<Filter>('all');
+
   const unreadCount = notifications?.filter((n) => !n.is_read).length ?? 0;
+
+  // "Activity" is the social slice — who followed you, liked or commented.
+  // Everything else (matchups, wallet, price alerts) stays under All.
+  const shown = (notifications ?? []).filter((n) =>
+    filter === 'activity' ? (ACTIVITY_TYPES as readonly string[]).includes(n.type) : true,
+  );
+  const activityUnread = (notifications ?? []).filter(
+    (n) => !n.is_read && (ACTIVITY_TYPES as readonly string[]).includes(n.type),
+  ).length;
 
   // Route to the thing the notification is actually about. Previously a tap
   // only marked it read — every notification was a dead end.
@@ -79,7 +95,17 @@ export default function NotificationsScreen() {
         if (data.matchup_id) router.push(`/matchup/${data.matchup_id}` as any);
         return;
       case 'friend_request':
+      case 'follow':
         if (data.from_user_id) router.push(`/user/${data.from_user_id}` as any);
+        return;
+      case 'post_like':
+      case 'post_comment':
+        // Land on the post itself; the feed opens its comments on arrival.
+        if (data.post_id) router.push(`/(tabs)/social?post=${data.post_id}` as any);
+        else if (data.from_user_id) router.push(`/user/${data.from_user_id}` as any);
+        return;
+      case 'matchup_score':
+        if (data.matchup_id) router.push(`/matchup/${data.matchup_id}` as any);
         return;
       case 'deposit_confirmed':
       case 'withdrawal_processed':
@@ -123,20 +149,56 @@ export default function NotificationsScreen() {
         )}
       </View>
 
+      {/* All · Activity — Activity is the social slice (follows, likes,
+          comments); everything else stays under All. */}
+      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 18, paddingBottom: 12 }}>
+        {([
+          { k: 'all' as Filter, label: 'All', n: unreadCount },
+          { k: 'activity' as Filter, label: 'Activity', n: activityUnread },
+        ]).map((t) => {
+          const active = filter === t.k;
+          return (
+            <Pressable
+              key={t.k}
+              onPress={() => setFilter(t.k)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={{
+                flexDirection: 'row', alignItems: 'center', gap: 6,
+                height: 34, paddingHorizontal: 16, borderRadius: 100,
+                backgroundColor: active ? theme.accent : theme.surface,
+                borderWidth: active ? 0 : 1, borderColor: theme.hairline,
+              }}
+            >
+              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: active ? theme.onAccent : theme.muted }}>
+                {t.label}
+              </Text>
+              {t.n > 0 ? (
+                <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: active ? theme.onAccent : theme.accent }}>
+                  {t.n}
+                </Text>
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </View>
+
       {isLoading ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
           <ActivityIndicator color={theme.accent} />
         </View>
-      ) : (notifications?.length ?? 0) === 0 ? (
+      ) : shown.length === 0 ? (
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8 }}>
           <Text style={{ fontFamily: FONT.serif, fontSize: 24, color: theme.ink }}>
             All <Text style={{ fontFamily: FONT.serifItalic, color: theme.muted }}>caught up</Text>
           </Text>
-          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.muted }}>No notifications yet.</Text>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: theme.muted }}>
+            {filter === 'activity' ? 'No follows, likes or comments yet.' : 'No notifications yet.'}
+          </Text>
         </View>
       ) : (
         <FlatList
-          data={notifications}
+          data={shown}
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 40 }}
           renderItem={({ item }) => (

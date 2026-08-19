@@ -181,7 +181,9 @@ export default function MatchupsScreen() {
               matchup={r.m}
               meId={profile?.id ?? ''}
               theme={theme}
-              onPress={() => router.push(`/matchup/${r.m.id}` as any)}
+              onPress={() => router.push(
+                (r.m.status === 'completed' ? `/matchup/result/${r.m.id}` : `/matchup/${r.m.id}`) as any,
+              )}
               onCancel={r.m.status === 'pending' ? () => confirmCancel(r.m.lineup1_id, r.m.id) : undefined}
               isCancelling={cancelMutation.isPending && (cancelMutation.variables as any)?.matchupId === r.m.id}
             />

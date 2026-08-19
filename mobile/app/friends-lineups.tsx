@@ -124,7 +124,7 @@ export default function FriendsLineupsScreen() {
                 None of your friends have built a lineup for tonight yet.{"\n"}Add more friends to see their picks.
               </Text>
               <Pressable
-                onPress={() => router.push('/friends' as any)}
+                onPress={() => router.push('/social/connections' as any)}
                 style={{ paddingHorizontal: 20, paddingVertical: 10, borderRadius: 999, backgroundColor: theme.accent }}
               >
                 <Text style={{ fontFamily: FONT.monoBold, fontSize: 11, color: theme.onAccent, letterSpacing: 1.2 }}>FIND FRIENDS</Text>

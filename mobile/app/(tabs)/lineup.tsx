@@ -264,7 +264,7 @@ export default function PlayerMarketScreen() {
       {/* ═══ Top Bar card ═══════════════════════════════════════════════════ */}
       <View style={s.card}>
         <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <RoundIconBtn theme={theme} label="Friends" onPress={() => router.push('/friends' as any)}>
+          <RoundIconBtn theme={theme} label="Connections" onPress={() => router.push('/social/connections' as any)}>
             <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
               <Path d="m15 18-6-6 6-6" />
             </Svg>

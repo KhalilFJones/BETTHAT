@@ -50,6 +50,9 @@ function potentialPayout(wager: number): { pot: number; rake: number; payout: nu
 }
 
 const QUICK_WAGERS = [5, 10, 50, 100] as const;
+// Mirrors app_config.max_wager_ceiling — place_lineup_order rejects anything
+// above it, so catch it in the field rather than on submit.
+const MAX_WAGER = 100;
 
 export default function PlaceOrderScreen() {
   const theme = useTheme();
@@ -120,6 +123,7 @@ export default function PlaceOrderScreen() {
     if (!wager) return { ok: false, msg: '' };
     if (!Number.isFinite(wagerNum)) return { ok: false, msg: 'Enter a number' };
     if (wagerNum < MIN_WAGER) return { ok: false, msg: `Minimum wager is $${MIN_WAGER}` };
+    if (wagerNum > MAX_WAGER) return { ok: false, msg: `Maximum wager is $${MAX_WAGER}` };
     if (wagerNum > balance) return { ok: false, msg: 'Insufficient buying power. Deposit to continue.' };
     return { ok: true, msg: '' };
   }, [wager, wagerNum, balance]);

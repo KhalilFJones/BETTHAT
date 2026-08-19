@@ -27,6 +27,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import { FONT, fmtPrice, fmtPriceShort } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
+import { useFollowCounts } from '@/hooks/social/useSocialGraph';
 
 const RANK_COLOR: Record<string, string> = {
   Bronze: '#CD7F32', Silver: '#B8BCC4', Gold: '#E8B923',
@@ -158,6 +159,7 @@ export default function ProfileScreen() {
     enabled: !!profile?.id,
   });
 
+  const { data: followCounts } = useFollowCounts(profile?.id);
   const wins = profile?.total_wins ?? 0;
   const losses = profile?.total_losses ?? 0;
   const matches = wins + losses;
@@ -258,7 +260,7 @@ export default function ProfileScreen() {
 
       {/* Top bar: people (friends) · settings */}
       <View style={s.topbar}>
-        <IconBtn onPress={() => router.push('/friends' as any)} label="Friends">
+        <IconBtn onPress={() => router.push('/social/connections' as any)} label="Connections">
           <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
             <Path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
             <Circle cx={9} cy={7} r={4} />
@@ -298,10 +300,14 @@ export default function ProfileScreen() {
               ? new Date(profile.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
               : '—'}
           </Text>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 10 }}>
-            <MetaStat n={String(friendsCount)} label="Friends" theme={theme} />
-            <Text style={{ fontFamily: FONT.sans, fontSize: 16, color: theme.ink }}>{rank}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 20, marginTop: 12 }}>
             <MetaStat n={String(matches)} label="Matches" theme={theme} />
+            <Pressable onPress={() => router.push('/social/connections?tab=followers' as any)} accessibilityLabel="View followers">
+              <MetaStat n={String(followCounts?.followers ?? 0)} label="Followers" theme={theme} />
+            </Pressable>
+            <Pressable onPress={() => router.push('/social/connections?tab=following' as any)} accessibilityLabel="View following">
+              <MetaStat n={String(followCounts?.following ?? 0)} label="Following" theme={theme} />
+            </Pressable>
           </View>
           <View style={{ flexDirection: 'row', gap: 14, marginTop: 16 }}>
             <IconBtn onPress={shareProfile} label="Share profile" round>

@@ -265,7 +265,7 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: theme.bg }}>
-      <ScreenHeader walletBalance={wallet?.balance} />
+      <ScreenHeader walletBalance={wallet?.balance} leftAction="notifications" />
       <Ticker entries={tickerEntries} />
 
       <ScrollView

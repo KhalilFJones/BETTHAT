@@ -121,13 +121,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
   // the slate would pull the whole season.
   const formSince = new Date(Date.now() - 21 * 24 * 3600 * 1000).toISOString().slice(0, 10);
 
-  const [historyQ, lineupQ, trendingQ, formQ] = await Promise.all([
-    supabase
-      .from('price_history')
-      .select('player_id, price, recorded_at')
-      .gte('recorded_at', sixHoursAgo)
-      .order('recorded_at', { ascending: true }),
-
+  const [lineupQ, trendingQ, formQ] = await Promise.all([
     supabase
       .from('lineups')
       .select(`
@@ -173,7 +167,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
   // slate and hides real outages from users and QA.
   if (tonightQ.error) throw tonightQ.error;
 
-  const errs = [historyQ.error, lineupQ.error, trendingQ.error, formQ.error].filter(Boolean);
+  const errs = [lineupQ.error, trendingQ.error, formQ.error].filter(Boolean);
   if (errs.length) {
     // These are secondary/enrichment queries (sparklines, in-progress lineup,
     // trending) — partial data (an empty sparkline, no sticky lineup bar) is
@@ -181,12 +175,31 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     console.warn('Market query partial failure:', errs.map((e) => e?.message));
   }
 
-  // Group history by player → sorted price array
+  // Sparkline ticks — ONLY for the players already in the lineup.
+  //
+  // This used to fetch every tick in the last 6h with no player filter. The
+  // price engine snapshots all ~273 players every 30s, so that was ~197k rows
+  // on every load and on every 60s refetch. The Draft Market grid shows form
+  // dots rather than sparklines now, so the only consumer left is the "Your
+  // lineup" sheet — at most LINEUP_SIZE players.
+  const lineupRow = (lineupQ.data ?? null) as unknown as InProgressLineup | null;
+  const lineupPlayerIds = (lineupRow?.lineup_players ?? [])
+    .map((lp) => lp.nba_players?.id)
+    .filter(Boolean) as string[];
+
   const history = new Map<string, number[]>();
-  for (const h of (historyQ.data ?? []) as PriceHistoryRow[]) {
-    const arr = history.get(h.player_id) ?? [];
-    arr.push(Number(h.price));
-    history.set(h.player_id, arr);
+  if (lineupPlayerIds.length > 0) {
+    const { data: histRows } = await supabase
+      .from('price_history')
+      .select('player_id, price, recorded_at')
+      .in('player_id', lineupPlayerIds)
+      .gte('recorded_at', sixHoursAgo)
+      .order('recorded_at', { ascending: true });
+    for (const h of (histRows ?? []) as PriceHistoryRow[]) {
+      const arr = history.get(h.player_id) ?? [];
+      arr.push(Number(h.price));
+      history.set(h.player_id, arr);
+    }
   }
 
   // Rows arrive newest-first, so the first 5 seen per player are their last 5.
@@ -208,7 +221,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
       game_tip_off: r.nba_games?.tip_off_time ?? null,
     })),
     history,
-    lineup: (lineupQ.data ?? null) as unknown as InProgressLineup | null,
+    lineup: lineupRow,
     trending: ((trendingQ.data ?? []) as unknown) as TrendingRow[],
     form,
   };

@@ -30,6 +30,15 @@ import { MonogramTile } from '@/components/holygrail/MonogramTile';
 
 type Tab = 'score' | 'lineups' | 'chat';
 
+// Realtime topics must be unique per mount. `supabase.removeChannel()` is
+// async and the effect cleanup can't await it, so a fast remount (navigating
+// away and straight back, fast-refresh, or the settled-matchup redirect) can
+// hand back the SAME still-subscribed channel — and calling .on() on a
+// subscribed channel throws "cannot add postgres_changes callbacks after
+// subscribe()". A per-mount suffix makes that collision impossible.
+let channelSeq = 0;
+const nextTopic = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${channelSeq++}`;
+
 // =============================================================================
 // ROOT
 // =============================================================================
@@ -51,7 +60,7 @@ export default function MatchupScreen() {
   useEffect(() => {
     if (!id) return;
     const ch = supabase
-      .channel(`matchup-live-${id}`)
+      .channel(nextTopic(`matchup-live-${id}`))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'matchup_activity_events', filter: `matchup_id=eq.${id}` },
         () => qc.invalidateQueries({ queryKey: ['matchup-detail', id] }))
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'matchups', filter: `id=eq.${id}` },
@@ -69,7 +78,7 @@ export default function MatchupScreen() {
   useEffect(() => {
     if (!id) return;
     const ch = supabase
-      .channel(`matchup-chat-${id}`)
+      .channel(nextTopic(`matchup-chat-${id}`))
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'matchup_messages', filter: `matchup_id=eq.${id}` },
         () => {
           qc.invalidateQueries({ queryKey: ['matchup-chat', id] });
@@ -134,6 +143,18 @@ export default function MatchupScreen() {
       return status === 'live' || status === 'matched' ? 30_000 : false;
     },
   });
+
+  // A matchup that settles while the user is watching hands off to the
+  // art-directed result screen. `replace` so Back doesn't bounce them into
+  // the now-finished live board.
+  //
+  // This MUST sit above the early return below: hooks have to run in the same
+  // order on every render, and reading `data` here (rather than the post-guard
+  // `isCompleted` local) is what keeps it unconditional.
+  const settledStatus = data?.matchup?.status === 'completed';
+  useEffect(() => {
+    if (settledStatus && id) router.replace(`/matchup/result/${id}` as any);
+  }, [settledStatus, id, router]);
 
   if (isLoading || !data) {
     return (
