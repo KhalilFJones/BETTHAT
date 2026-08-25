@@ -40,6 +40,19 @@
           "icon": "./assets/notification-icon.png",
           "color": "#F5A524"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "BETTHAT uses your photos so you can set a profile picture.",
+          "cameraPermission": "BETTHAT uses your camera so you can take a profile picture."
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "BETTHAT uses your microphone so you can send voice notes in comments and match chat."
+        }
       ]
     ],
     "experiments": {

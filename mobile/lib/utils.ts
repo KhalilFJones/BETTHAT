@@ -22,8 +22,8 @@ export const COLORS = {
   textMuted: '#71717A',
   brand:     '#F5A524',
   // Reserved — price direction ONLY.
-  priceUp:   '#26D782',
-  priceDown: '#F24236',
+  priceUp:   '#2FAE60',
+  priceDown: '#D6453C',
   // Semantic — everything else.
   win:       '#0E8C44',
   loss:      '#B23A2E',
@@ -67,10 +67,10 @@ export function formatPct(pct: number | string | null | undefined): string {
 export function formatGameTime(isoString: string | null): string {
   if (!isoString) return '-';
   const d = new Date(isoString);
-  return d.toLocaleTimeString('en-US', {
+  // Device locale decides 12- vs 24-hour and the timezone.
+  return d.toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
   });
 }
 

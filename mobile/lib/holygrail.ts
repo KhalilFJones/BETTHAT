@@ -30,9 +30,9 @@ export const HG = {
   steel:       '#3A5F8A',
 
   // PRICE-DIRECTION ONLY. Never UI chrome, never WIN/LOSS, never buttons.
-  up:          '#26D782',
+  up:          '#2FAE60',
   upSoft:      'rgba(38, 215, 130, 0.12)',
-  down:        '#F24236',
+  down:        '#D6453C',
   downSoft:    'rgba(242, 66, 54, 0.12)',
 
   // For LOSS hero (Game Result): muted gray, not red. "Absence of color is the punishment."
@@ -93,11 +93,24 @@ export function fmtFP(n: number | string | null | undefined): string {
   return v.toFixed(1);
 }
 
+// Clock formatting, everywhere. `undefined` locale means the device's own
+// locale decides 12- vs 24-hour and the timezone, rather than us imposing
+// either. Never pass an explicit locale or hour12 at a call site.
 export function fmtTime(d: Date | string | null | undefined): string {
   if (!d) return '—';
   const date = typeof d === 'string' ? new Date(d) : d;
   if (!Number.isFinite(date.getTime())) return '—';
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+  return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+/** Local time plus the viewer's actual zone, e.g. "7:05 PM PDT". */
+export function fmtTimeWithZone(d: Date | string | null | undefined): string {
+  if (!d) return '—';
+  const date = typeof d === 'string' ? new Date(d) : d;
+  if (!Number.isFinite(date.getTime())) return '—';
+  return date.toLocaleTimeString(undefined, {
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
+  });
 }
 
 export function fmtRelative(d: Date | string | null | undefined): string {

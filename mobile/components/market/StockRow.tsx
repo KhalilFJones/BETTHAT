@@ -1,13 +1,16 @@
 import { View, Text, Pressable } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-import { FONT, fmtPrice, playerLastName } from '@/lib/holygrail';
+import { FONT, fmtPrice } from '@/lib/holygrail';
 import type { Theme } from '@/lib/theme';
 import { PriceGraph } from '@/components/market/PriceGraph';
+import { PlayerHeadshot } from '@/components/media/PlayerHeadshot';
 
 // Figma "Stock" component, shared by the Game Setup lineup review and the
 // Draft Market's "Your lineup" sheet:
-//   [flex:1 group: 40px circle initial · gap 12 · info] · gap 12 ·
+//   [flex:1 group: 40px headshot · gap 12 · info] · gap 12 ·
+// The info column carries the player's FULL name — ticker handles are never
+// shown anywhere in the app.
 //   80x40 graph · gap 12 · 89px price + change
 // Only the secondary line differs (position vs team), hence `secondary`.
 //
@@ -27,6 +30,8 @@ interface Props {
     ticker_handle?: string | null;
     position?: string | null;
     team_abbreviation?: string | null;
+    headshot_url?: string | null;
+    external_id?: string | null;
     player_prices?: { price_change_pct_24h?: number | string | null } | null;
   };
   price: number | string;
@@ -43,8 +48,6 @@ interface Props {
 export function StockRow({ theme, player, price, prices, secondary, pctChange, onPress, onRemove, removeDisabled }: Props) {
   const pct = Number(pctChange ?? player.player_prices?.price_change_pct_24h ?? 0);
   const color = pct === 0 ? theme.muted : pct > 0 ? theme.gain : theme.danger;
-  const ticker = (player.ticker_handle ?? playerLastName(player as any) ?? '').toUpperCase();
-  const initial = (ticker || player.full_name || '?').charAt(0).toUpperCase();
   const tail = secondary ?? player.position ?? '';
   const gap = onRemove ? 10 : 12;
   const graphW = onRemove ? 72 : 80;
@@ -53,13 +56,13 @@ export function StockRow({ theme, player, price, prices, secondary, pctChange, o
     <>
       {/* Logo and Information Container */}
       <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap }}>
-        <View style={{ width: 40, height: 40, borderRadius: 100, backgroundColor: theme.surfaceSunken, alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontFamily: FONT.sansBold, fontSize: 16, lineHeight: 24, color: theme.ink }}>{initial}</Text>
-        </View>
+        <PlayerHeadshot player={player} theme={theme} size={40} showTeamCrest />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>{ticker}</Text>
+          <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>
+            {player.full_name}
+          </Text>
           <Text numberOfLines={1} style={{ fontFamily: FONT.sans, fontSize: 12, lineHeight: 18, color: theme.muted2 }}>
-            {player.full_name}{'  '}
+            {player.team_abbreviation}{'  '}
             <Text style={{ fontFamily: FONT.sansBold, fontSize: 12, color: theme.muted2 }}>{tail}</Text>
           </Text>
         </View>

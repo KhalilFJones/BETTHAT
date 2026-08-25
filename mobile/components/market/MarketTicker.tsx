@@ -6,14 +6,15 @@ import { FONT } from '@/lib/holygrail';
 // price ticker can run across the whole Draft Market flow — Draft Market →
 // Game Setup → Order Details — instead of only appearing on the first screen.
 // Dark ticker strip per the Figma spec's own exact tones, distinct from the
-// light theme.ts card it sits inside (and from the older, HG-themed
-// components/holygrail/Ticker.tsx used on the home screen).
+// light theme.ts card it sits inside. Home and Draft Market both use this one;
+// the older HG-themed components/holygrail/Ticker.tsx is no longer wired up.
 const TICKER_BG = '#151517';   // Greyscale/800
-const TICKER_UP = '#269C45';   // Alert/Success/300
-const TICKER_DOWN = '#F05D5D'; // Alert/Error/200
+const TICKER_UP = '#2FAE60';   // Alert/Success/300
+const TICKER_DOWN = '#D6453C'; // oxblood family, legible on the dark strip
 
 export interface MarketTickerEntry {
-  ticker: string;
+  /** Full player name — the app never surfaces ticker handles. */
+  name: string;
   price: number;
   pctChange: number;
 }
@@ -52,7 +53,7 @@ export function MarketTicker({ entries }: { entries: MarketTickerEntry[] }) {
           const sign = t.pctChange >= 0 ? '+' : '';
           return (
             <View key={i} style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 12, color: '#FFFFFF' }}>{t.ticker}</Text>
+              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 12, color: '#FFFFFF' }}>{t.name}</Text>
               <Text style={{ fontFamily: FONT.sansMedium, fontSize: 12, color }}>{sign}{t.pctChange.toFixed(2)}%</Text>
             </View>
           );

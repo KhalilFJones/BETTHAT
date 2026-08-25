@@ -153,7 +153,7 @@ export default function RootLayout() {
     DMSans_500Medium,
     DMSans_600SemiBold,
     DMSans_700Bold,
-    DMSerifDisplay_400Regular,
+      DMSerifDisplay_400Regular,
     DMSerifDisplay_400Regular_Italic,
     IBMPlexMono_400Regular,
     IBMPlexMono_500Medium,

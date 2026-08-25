@@ -2861,6 +2861,8 @@ export type Database = {
       }
       social_post_comments: {
         Row: {
+          audio_duration_ms: number | null
+          audio_url: string | null
           body: string | null
           created_at: string
           gif_url: string | null
@@ -2870,6 +2872,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          audio_duration_ms?: number | null
+          audio_url?: string | null
           body?: string | null
           created_at?: string
           gif_url?: string | null
@@ -2879,6 +2883,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          audio_duration_ms?: number | null
+          audio_url?: string | null
           body?: string | null
           created_at?: string
           gif_url?: string | null

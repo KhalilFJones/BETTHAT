@@ -20,11 +20,11 @@ import { useAuthStore } from '@/stores/auth.store';
 // Underlying file `lineup.tsx` is the Market route, kept to avoid breaking
 // existing deep links.
 
-const ACCENT = '#F0F600';   // Primary/400 - Base
-const ON_ACCENT = '#151517'; // Greyscale/800
+const ACCENT = '#CE5A12';   // Primary/400 - Base (deep orange)
+const ON_ACCENT = '#0A0A0C'; // 4.80:1 on the orange; white would be 4.12:1
 const PILL = '#151517';
 const INACTIVE = '#8A8A8E'; // Greyscale/500
-const NOTIF_BADGE = '#FF3B30';
+const NOTIF_BADGE = '#960200'; // oxblood — a fill, so the exact brand red works
 
 const BUTTON = 48;
 const NAV_WIDTH = 248; // 4 (pad) + 5*48 + 4 (pad)

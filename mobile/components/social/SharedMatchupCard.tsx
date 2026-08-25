@@ -34,7 +34,7 @@ export interface MatchupSnapshot {
 }
 
 const WIN_TICK = '#53D175';
-const LOSS_TICK = '#E39898';
+const LOSS_TICK = '#C0645F';
 const LIVE_WASH = '#FAEDED';
 
 type Phase = 'upcoming' | 'live' | 'final';

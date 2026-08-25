@@ -8,13 +8,13 @@
 // Completed matchups show WIN/LOSS hero on the SCORE tab; CHAT becomes read-only.
 // =============================================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, FlatList, Pressable,
+  View, Text, ScrollView, FlatList, Pressable, Modal,
   ActivityIndicator, TextInput, KeyboardAvoidingView,
   Platform, Keyboard,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -22,13 +22,22 @@ import Svg, { Path, Circle } from 'react-native-svg';
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import {
-  FONT, fmtPrice, fmtFP, fmtRelative,
-  playerInitials, playerLastName, opponentColor,
+  FONT, fmtPrice, fmtFP, fmtRelative, fmtTime,
+  opponentColor,
 } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
-import { MonogramTile } from '@/components/holygrail/MonogramTile';
+import { MatchupBoard } from '@/components/matchup/MatchupBoard';
+import { PlayerHeadshot } from '@/components/media/PlayerHeadshot';
+import { VoiceRecorderBar } from '@/components/media/VoiceRecorderBar';
+import { VoiceNotePlayer } from '@/components/media/VoiceNotePlayer';
+import { UserAvatar } from '@/components/media/UserAvatar';
+import { useVoiceNote } from '@/hooks/useVoiceNote';
 
 type Tab = 'score' | 'lineups' | 'chat';
+
+// Matches the live pill on MatchupBoard, so the scoreline reads the same
+// whether you are on the board or in the thread.
+const LIVE_RED = '#D6453C';
 
 // Realtime topics must be unique per mount. `supabase.removeChannel()` is
 // async and the effect cleanup can't await it, so a fast remount (navigating
@@ -49,8 +58,10 @@ export default function MatchupScreen() {
   const router = useRouter();
   const { profile } = useAuthStore();
   const qc = useQueryClient();
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState<Tab>('score');
   const [chatUnread, setChatUnread] = useState(0);
+  const [chatOpen, setChatOpen] = useState(false);
   // Read inside the chat subscription's INSERT handler without making
   // `activeTab` an effect dependency — see note below.
   const activeTabRef = useRef<Tab>('score');
@@ -100,14 +111,14 @@ export default function MatchupScreen() {
           user1_id, user2_id, user1_score, user2_score,
           user1_final_score, user2_final_score, score_margin,
           winner_user_id, started_at, completed_at, created_at,
-          u1:profiles!user1_id(id, username, display_name, rank_tier, total_wins, total_losses),
-          u2:profiles!user2_id(id, username, display_name, rank_tier, total_wins, total_losses),
+          u1:profiles!user1_id(id, username, display_name, rank_tier, avatar_url, total_wins, total_losses),
+          u2:profiles!user2_id(id, username, display_name, rank_tier, avatar_url, total_wins, total_losses),
           l1:lineups!lineup1_id(id, total_cap_used,
             lineup_players(slot_number, frozen_price, fantasy_points_scored,
-              nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation))),
+              nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation, headshot_url))),
           l2:lineups!lineup2_id(id, total_cap_used,
             lineup_players(slot_number, frozen_price, fantasy_points_scored,
-              nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation)))
+              nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation, headshot_url)))
         `)
         .eq('id', id)
         .single();
@@ -120,6 +131,26 @@ export default function MatchupScreen() {
         .order('created_at', { ascending: false })
         .limit(30);
 
+      // Live game context for the scoreboard strip (Q3 · 8:42 · LAL 88 - BOS 82).
+      const pids: string[] = [];
+      for (const side of [(matchup as any).l1, (matchup as any).l2]) {
+        for (const lp of side?.lineup_players ?? []) if (lp.nba_players?.id) pids.push(lp.nba_players.id);
+      }
+      let liveGame: any = null;
+      const boxScores = new Map<string, any>();
+      if (pids.length > 0) {
+        const { data: rows } = await supabase
+          .from('player_game_stats')
+          .select(`player_id, points, rebounds, assists, steals, turnovers, fantasy_points,
+                   nba_games!inner(id, status, period, game_clock, home_team, away_team,
+                                   home_team_abbreviation, away_team_abbreviation, home_score, away_score)`)
+          .in('player_id', pids);
+        for (const r of (rows ?? []) as any[]) {
+          boxScores.set(r.player_id, r);
+          if (!liveGame && r.nba_games?.status === 'live') liveGame = r.nba_games;
+        }
+      }
+
       const { count: h2h } = await supabase
         .from('matchups')
         .select('id', { count: 'exact', head: true })
@@ -130,7 +161,7 @@ export default function MatchupScreen() {
         .eq('status', 'completed')
         .lt('completed_at', (matchup as any).created_at);
 
-      return { matchup: matchup as any, events: events ?? [], h2h: h2h ?? 0 };
+      return { matchup: matchup as any, events: events ?? [], h2h: h2h ?? 0, liveGame, boxScores };
     },
     enabled: !!id,
     // React Query v5: refetchInterval receives the Query object, not the
@@ -196,51 +227,79 @@ export default function MatchupScreen() {
         onBack={() => router.back()}
       />
 
-      {/* ── Tab bar ── */}
-      <TabBar
+      <MatchupBoard
         theme={theme}
-        active={activeTab}
-        onPress={handleTabPress}
-        chatUnread={chatUnread}
+        me={me}
+        opp={opp}
+        meL={meL}
+        oppL={oppL}
+        meScore={meScore}
+        oppScore={oppScore}
+        events={data.events}
+        liveGame={data.liveGame}
+        boxScores={data.boxScores}
         isCompleted={isCompleted}
+        onOpenChat={() => setChatOpen(true)}
+        onPlayerPress={(pid: string) => router.push(`/player/${pid}` as any)}
       />
 
-      {/* ── Tab content ── */}
-      {activeTab === 'score' && (
-        <ScoreTab
-          theme={theme}
-          m={m}
-          meScore={meScore}
-          oppScore={oppScore}
-          won={won}
-          isCompleted={isCompleted}
-          events={data.events}
-          me={me}
-          opp={opp}
-          oppAccent={oppAccent}
-        />
-      )}
-      {activeTab === 'lineups' && (
-        <LineupsTab
-          theme={theme}
-          meL={meL}
-          oppL={oppL}
-          me={me}
-          opp={opp}
-          oppAccent={oppAccent}
-          isCompleted={isCompleted}
-        />
-      )}
-      {activeTab === 'chat' && (
-        <ChatTab
-          theme={theme}
-          matchupId={id!}
-          profile={profile}
-          opp={opp}
-          oppAccent={oppAccent}
-          isCompleted={isCompleted}
-        />
-      )}
+      <Modal visible={chatOpen} animationType="slide" onRequestClose={() => setChatOpen(false)}>
+        <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top }}>
+          <View style={{
+            flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+            paddingHorizontal: 12, paddingVertical: 8,
+            borderBottomWidth: 1, borderColor: theme.hairline,
+            backgroundColor: theme.surfaceSunken,
+          }}>
+            <Pressable
+              onPress={() => setChatOpen(false)}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Close chat and return to the matchup"
+              style={{
+                width: 40, height: 40, borderRadius: 100,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: theme.surfaceSunken,
+              }}
+            >
+              <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="m15 18-6-6 6-6" />
+              </Svg>
+            </Pressable>
+            <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+              <UserAvatar
+                uri={opp?.avatar_url ?? null}
+                name={opp?.display_name || opp?.username}
+                size={30}
+                theme={theme}
+                ring={oppAccent}
+              />
+              <View style={{ minWidth: 0 }}>
+                <Text numberOfLines={1} style={{ fontFamily: FONT.sansBold, fontSize: 16, color: theme.ink }}>
+                  {opp?.display_name || opp?.username || 'Chat'}
+                </Text>
+                <Text numberOfLines={1} style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted2, letterSpacing: 0.4 }}>
+                  {opp?.username ? `@${opp.username}` : ''}
+                  {opp?.total_wins != null ? `  ·  ${opp.total_wins}W ${opp.total_losses ?? 0}L` : ''}
+                </Text>
+              </View>
+            </View>
+            <View style={{ width: 40 }} />
+          </View>
+          <ChatTab
+            theme={theme}
+            matchupId={id!}
+            profile={profile}
+            opp={opp}
+            oppAccent={oppAccent}
+            isCompleted={isCompleted}
+            meScore={meScore}
+            oppScore={oppScore}
+            liveGame={data.liveGame}
+            bottomInset={insets.bottom}
+          />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -249,15 +308,24 @@ export default function MatchupScreen() {
 // MATCHUP HEADER
 // =============================================================================
 
-function MatchupHeader({ theme, m, me, opp, won, isCompleted, oppAccent, h2h, onBack }: any) {
-  const delta = Number(m.user1_score ?? 0) - Number(m.user2_score ?? 0);
-
+function MatchupHeader({ theme, m, me, opp, won, isCompleted, oppAccent, h2h, onBack }: {
+  theme: Theme;
+  m: { status: string; settled_wager: number | null; pot_amount: number };
+  me: any;
+  opp: any;
+  won: boolean;
+  isCompleted: boolean;
+  /** Per-opponent accent, so the two sides of the strip stay distinguishable. */
+  oppAccent: string;
+  h2h: number;
+  onBack: () => void;
+}) {
   let statusLabel = '';
   let statusColor: string = theme.muted;
   if (m.status === 'pending') { statusLabel = 'IN QUEUE'; statusColor = theme.muted; }
   else if (m.status === 'matched') { statusLabel = 'MATCHED'; statusColor = theme.accent; }
   else if (m.status === 'live') { statusLabel = 'LIVE'; statusColor = theme.up; }
-  else if (isCompleted) { statusLabel = won ? 'WIN' : 'LOSS'; statusColor = won ? theme.win : theme.muted; }
+  else if (isCompleted) { statusLabel = won ? 'WIN' : 'LOSS'; statusColor = won ? theme.win : theme.loss; }
 
   return (
     <View style={{ paddingHorizontal: 18, paddingTop: 6, paddingBottom: 14 }}>
@@ -294,9 +362,10 @@ function MatchupHeader({ theme, m, me, opp, won, isCompleted, oppAccent, h2h, on
         {/* Me */}
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
           <View style={{ position: 'relative' }}>
-            <MonogramTile
-              initials={(me?.display_name ?? me?.username ?? '??').slice(0, 2).toUpperCase()}
-              size={40} showJersey={false}
+            <UserAvatar
+              uri={me?.avatar_url ?? null}
+              name={me?.display_name || me?.username}
+              size={40} theme={theme} ring={theme.accent}
             />
             <View style={{ position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, borderRadius: 6, backgroundColor: theme.accent, borderWidth: 2, borderColor: theme.surface }} />
           </View>
@@ -329,9 +398,10 @@ function MatchupHeader({ theme, m, me, opp, won, isCompleted, oppAccent, h2h, on
             </Text>
           </View>
           <View style={{ position: 'relative' }}>
-            <MonogramTile
-              initials={(opp?.display_name ?? opp?.username ?? '??').slice(0, 2).toUpperCase()}
-              size={40} showJersey={false}
+            <UserAvatar
+              uri={opp?.avatar_url ?? null}
+              name={opp?.display_name || opp?.username}
+              size={40} theme={theme} ring={oppAccent}
             />
             <View style={{ position: 'absolute', bottom: -2, right: -2, width: 12, height: 12, borderRadius: 6, backgroundColor: oppAccent, borderWidth: 2, borderColor: theme.surface }} />
           </View>
@@ -584,9 +654,9 @@ function PickCard({ theme, lp, accent, side, isCompleted }: { theme: Theme; lp: 
         borderTopWidth: 3, borderTopColor: accent,
         padding: 12, gap: 8,
       }}>
-      {/* Player monogram + name */}
+      {/* Player headshot + name */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-        <MonogramTile initials={playerInitials(p)} jersey={p.jersey_number} size={34} showJersey={false} />
+        <PlayerHeadshot player={p} theme={theme} size={34} shape="rounded" showTeamCrest />
         <View style={{ flex: 1 }}>
           <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 12, color: theme.ink }}>
             {p.full_name}
@@ -619,18 +689,27 @@ function PickCard({ theme, lp, accent, side, isCompleted }: { theme: Theme; lp: 
 // CHAT TAB
 // =============================================================================
 
-function ChatTab({ theme, matchupId, profile, opp, oppAccent, isCompleted }: {
+function ChatTab({
+  theme, matchupId, profile, opp, oppAccent, isCompleted,
+  meScore, oppScore, liveGame, bottomInset = 0,
+}: {
   theme: Theme; matchupId: string; profile: any; opp: any; oppAccent: string; isCompleted: boolean;
+  /** Live fantasy totals, repeated on the score rail above the thread. */
+  meScore: number | string | null; oppScore: number | string | null;
+  liveGame: any;
+  /** Home-indicator inset — applied to the composer so it clears the edge. */
+  bottomInset?: number;
 }) {
   const [text, setText] = useState('');
   const listRef = useRef<FlatList>(null);
+  const voice = useVoiceNote();
 
   const { data: messages = [] } = useQuery({
     queryKey: ['matchup-chat', matchupId],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('matchup_messages' as any)
-        .select('id, user_id, content, created_at, sender:profiles!user_id(username, display_name)')
+        .select('id, user_id, content, audio_url, audio_duration_ms, created_at, sender:profiles!user_id(username, display_name, avatar_url)')
         .eq('matchup_id', matchupId)
         .order('created_at', { ascending: true })
         .limit(100);
@@ -642,10 +721,18 @@ function ChatTab({ theme, matchupId, profile, opp, oppAccent, isCompleted }: {
   });
 
   const sendMutation = useMutation({
-    mutationFn: async (content: string) => {
+    mutationFn: async (payload: { content?: string; audio?: { url: string; durationMs: number } }) => {
       const { error } = await supabase
         .from('matchup_messages' as any)
-        .insert({ matchup_id: matchupId, user_id: profile.id, content });
+        .insert({
+          matchup_id: matchupId,
+          user_id: profile.id,
+          // Null rather than '' — the table's check constraint treats an empty
+          // string as absent text, and an audio-only message has none.
+          content: payload.content ?? null,
+          audio_url: payload.audio?.url ?? null,
+          audio_duration_ms: payload.audio?.durationMs ?? null,
+        });
       if (error) throw error;
     },
     onSuccess: () => {
@@ -657,109 +744,279 @@ function ChatTab({ theme, matchupId, profile, opp, oppAccent, isCompleted }: {
   const handleSend = () => {
     const trimmed = text.trim();
     if (!trimmed || sendMutation.isPending) return;
-    sendMutation.mutate(trimmed);
+    sendMutation.mutate({ content: trimmed });
   };
+
+  // Send only happens from the review stage, after the sender has heard it.
+  const handleSendVoice = async () => {
+    const note = await voice.upload();
+    if (note) sendMutation.mutate({ audio: note });
+  };
+
+  // Consecutive messages from one person inside this window collapse into a
+  // single run: one avatar, one timestamp. Without it every line carries its
+  // own furniture and the thread reads as a list of receipts.
+  const RUN_WINDOW_MS = 3 * 60 * 1000;
+
+  const runFlags = useMemo(() => {
+    return messages.map((m: any, i: number) => {
+      const prev = messages[i - 1] as any;
+      const next = messages[i + 1] as any;
+      const t = new Date(m.created_at).getTime();
+      const sameAsPrev =
+        prev &&
+        prev.user_id === m.user_id &&
+        t - new Date(prev.created_at).getTime() < RUN_WINDOW_MS;
+      const sameAsNext =
+        next &&
+        next.user_id === m.user_id &&
+        new Date(next.created_at).getTime() - t < RUN_WINDOW_MS;
+      const newDay =
+        !prev ||
+        new Date(prev.created_at).toDateString() !== new Date(m.created_at).toDateString();
+      return { first: !sameAsPrev || newDay, last: !sameAsNext, newDay };
+    });
+  }, [messages]);
+
+  const lead = Number(meScore ?? 0) - Number(oppScore ?? 0);
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: theme.bg }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={0}
     >
-      {/* Messages */}
+      {/* ═══ Live score rail ═══════════════════════════════════════════════
+          The whole reason this thread exists is the game. Repeating the
+          scoreline here means you never leave the argument to check it. */}
+      <View
+        style={{
+          flexDirection: 'row', alignItems: 'center', gap: 12,
+          paddingHorizontal: 18, paddingVertical: 12,
+          backgroundColor: theme.surfaceSunken,
+          borderBottomWidth: 1, borderColor: theme.hairline,
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View
+            style={{
+              width: 7, height: 7, borderRadius: 100,
+              backgroundColor: isCompleted ? theme.muted2 : LIVE_RED,
+            }}
+          />
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, letterSpacing: 1.1, color: isCompleted ? theme.muted2 : LIVE_RED }}>
+            {isCompleted ? 'FINAL' : 'LIVE'}
+          </Text>
+        </View>
+
+        {liveGame && !isCompleted ? (
+          <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: theme.muted, letterSpacing: 0.4 }}>
+            Q{liveGame.period ?? 1} · {liveGame.game_clock ?? '--:--'}
+          </Text>
+        ) : null}
+
+        <View style={{ flex: 1 }} />
+
+        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: theme.accent }}>
+            {Number(meScore ?? 0).toFixed(1)}
+          </Text>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.muted2 }}>–</Text>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 15, color: oppAccent }}>
+            {Number(oppScore ?? 0).toFixed(1)}
+          </Text>
+        </View>
+      </View>
+
+      {lead !== 0 ? (
+        <View style={{ paddingHorizontal: 18, paddingTop: 8 }}>
+          <Text style={{ fontFamily: FONT.sans, fontSize: 11, color: theme.muted2, textAlign: 'center' }}>
+            {lead > 0 ? 'You lead' : `${opp?.username ?? 'They'} lead`} by {Math.abs(lead).toFixed(1)}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* ═══ Thread ════════════════════════════════════════════════════════ */}
       <FlatList
         ref={listRef}
         data={messages}
         keyExtractor={(item: any) => item.id}
-        contentContainerStyle={{ padding: 18, gap: 10, paddingBottom: 16 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16, paddingTop: 14, paddingBottom: 18,
+          flexGrow: 1,
+        }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+        showsVerticalScrollIndicator={false}
         ListEmptyComponent={
-          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 48, gap: 10 }}>
-            <Svg width={36} height={36} viewBox="0 0 24 24" fill="none" stroke={theme.muted} strokeWidth={1.2} strokeLinecap="round" strokeLinejoin="round">
-              <Path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-            </Svg>
-            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, textAlign: 'center', lineHeight: 20 }}>
-              {isCompleted ? 'Chat has ended.' : `Start a conversation with ${opp?.username ?? 'your opponent'}!`}
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, paddingHorizontal: 40 }}>
+            <View
+              style={{
+                width: 56, height: 56, borderRadius: 100,
+                backgroundColor: theme.surfaceSunken,
+                borderWidth: 1, borderColor: theme.hairline,
+                alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke={theme.muted2} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round">
+                <Path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </Svg>
+            </View>
+            <Text style={{ fontFamily: FONT.sansBold, fontSize: 15, color: theme.ink, textAlign: 'center' }}>
+              {isCompleted ? 'Chat has ended' : 'No messages yet'}
+            </Text>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, textAlign: 'center', lineHeight: 19 }}>
+              {isCompleted
+                ? 'This match is settled. The thread stays here for the record.'
+                : `Say something to @${opp?.username ?? 'your opponent'} while the game runs.`}
             </Text>
           </View>
         }
-        renderItem={({ item }: { item: any }) => {
+        renderItem={({ item, index }: { item: any; index: number }) => {
           const isMe = item.user_id === profile?.id;
           const accent = isMe ? theme.accent : oppAccent;
-          const name = item.sender?.username ?? (isMe ? 'You' : opp?.username ?? '—');
+          const flags = runFlags[index] ?? { first: true, last: true, newDay: false };
+          const name = item.sender?.display_name || item.sender?.username || (isMe ? 'You' : opp?.username) || '—';
+
           return (
-            <View style={{ flexDirection: 'row', justifyContent: isMe ? 'flex-end' : 'flex-start', gap: 8 }}>
-              {!isMe ? (
-                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: oppAccent + '33', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
-                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: oppAccent }}>
-                    {name.slice(0, 2).toUpperCase()}
-                  </Text>
-                </View>
-              ) : null}
-              <View style={{ maxWidth: '72%' }}>
+            <View>
+              {flags.newDay ? <DayDivider theme={theme} iso={item.created_at} /> : null}
+
+              <View
+                style={{
+                  flexDirection: 'row',
+                  justifyContent: isMe ? 'flex-end' : 'flex-start',
+                  alignItems: 'flex-end',
+                  gap: 8,
+                  marginTop: flags.first ? 12 : 3,
+                }}
+              >
+                {/* Gutter: the avatar only appears on the last message of a
+                    run, so a burst reads as one utterance. */}
                 {!isMe ? (
-                  <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: oppAccent, letterSpacing: 0.4, marginBottom: 3 }}>
-                    {name}
-                  </Text>
+                  <View style={{ width: 30 }}>
+                    {flags.last ? (
+                      <UserAvatar
+                        uri={item.sender?.avatar_url ?? opp?.avatar_url ?? null}
+                        name={name}
+                        size={30}
+                        theme={theme}
+                        ring={oppAccent}
+                      />
+                    ) : null}
+                  </View>
                 ) : null}
-                <View style={{
-                  paddingHorizontal: 14, paddingVertical: 10,
-                  backgroundColor: isMe ? theme.accent : theme.surface,
-                  borderRadius: 16,
-                  borderBottomRightRadius: isMe ? 4 : 16,
-                  borderBottomLeftRadius: isMe ? 16 : 4,
-                  borderWidth: isMe ? 0 : 1,
-                  borderColor: theme.hairline,
-                }}>
-                  <Text style={{ fontFamily: FONT.sans, fontSize: 14, color: isMe ? theme.onAccent : theme.ink, lineHeight: 20 }}>
-                    {item.content}
-                  </Text>
+
+                <View style={{ maxWidth: '74%', alignItems: isMe ? 'flex-end' : 'flex-start' }}>
+                  {flags.first && !isMe ? (
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 10, color: oppAccent, letterSpacing: 0.5, marginBottom: 4, marginLeft: 2 }}>
+                      {name}
+                    </Text>
+                  ) : null}
+
+                  {item.audio_url ? (
+                    <VoiceNotePlayer
+                      url={item.audio_url}
+                      durationMs={item.audio_duration_ms}
+                      theme={theme}
+                      tint={accent}
+                      onTint={isMe ? theme.onAccent : theme.bg}
+                      compact
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        paddingHorizontal: 14, paddingVertical: 9,
+                        backgroundColor: isMe ? theme.accent : theme.surfaceRaised,
+                        borderWidth: isMe ? 0 : 1,
+                        borderColor: theme.hairline,
+                        // Square off the inner corner mid-run so a burst looks
+                        // like one block, and round it again at the tail.
+                        borderRadius: 18,
+                        borderBottomRightRadius: isMe ? (flags.last ? 5 : 18) : 18,
+                        borderTopRightRadius: isMe && !flags.first ? 6 : 18,
+                        borderBottomLeftRadius: !isMe ? (flags.last ? 5 : 18) : 18,
+                        borderTopLeftRadius: !isMe && !flags.first ? 6 : 18,
+                      }}
+                    >
+                      <Text style={{ fontFamily: FONT.sans, fontSize: 15, lineHeight: 21, color: isMe ? theme.onAccent : theme.ink }}>
+                        {item.content}
+                      </Text>
+                    </View>
+                  )}
+
+                  {flags.last ? (
+                    <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted2, marginTop: 4, letterSpacing: 0.3 }}>
+                      {fmtTime(item.created_at)}
+                    </Text>
+                  ) : null}
                 </View>
-                <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted, marginTop: 3, textAlign: isMe ? 'right' : 'left', letterSpacing: 0.3 }}>
-                  {fmtRelative(item.created_at)}
-                </Text>
+
+                {isMe ? (
+                  <View style={{ width: 30 }}>
+                    {flags.last ? (
+                      <UserAvatar
+                        uri={profile?.avatar_url ?? null}
+                        name={profile?.display_name || profile?.username || 'Me'}
+                        size={30}
+                        theme={theme}
+                        ring={theme.accent}
+                      />
+                    ) : null}
+                  </View>
+                ) : null}
               </View>
-              {isMe ? (
-                <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: theme.accentSoft, alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
-                  <Text style={{ fontFamily: FONT.monoBold, fontSize: 10, color: theme.accent }}>
-                    {(profile?.username ?? 'Me').slice(0, 2).toUpperCase()}
-                  </Text>
-                </View>
-              ) : null}
             </View>
           );
         }}
       />
 
-      {/* Input */}
+      {/* ═══ Composer ══════════════════════════════════════════════════════ */}
       {!isCompleted ? (
         <View style={{
           flexDirection: 'row', alignItems: 'center', gap: 10,
-          paddingHorizontal: 18, paddingVertical: 12,
+          paddingHorizontal: 16, paddingTop: 12, paddingBottom: 12 + bottomInset,
           borderTopWidth: 1, borderColor: theme.hairline,
-          backgroundColor: theme.bg,
+          backgroundColor: theme.surfaceSunken,
         }}>
+          <VoiceRecorderBar
+            theme={theme}
+            stage={voice.stage}
+            durationMs={voice.durationMs}
+            levels={voice.levels}
+            recordedUri={voice.recordedUri}
+            uploading={voice.uploading || sendMutation.isPending}
+            onStart={voice.start}
+            onStop={voice.stop}
+            onSend={handleSendVoice}
+            onDiscard={voice.discard}
+          />
+
+          {voice.stage !== 'idle' ? null : (
           <TextInput
             value={text}
             onChangeText={setText}
             placeholder="Say something…"
-            placeholderTextColor={theme.muted}
+            placeholderTextColor={theme.muted2}
             maxLength={500}
             returnKeyType="send"
             onSubmitEditing={handleSend}
             style={{
-              flex: 1, height: 44, backgroundColor: theme.surface, borderRadius: 22,
+              flex: 1, height: 44, backgroundColor: theme.surfaceRaised, borderRadius: 22,
               paddingHorizontal: 16, paddingVertical: 0,
-              fontFamily: FONT.sans, fontSize: 14, color: theme.ink,
+              fontFamily: FONT.sans, fontSize: 15, color: theme.ink,
               borderWidth: 1, borderColor: theme.hairline,
             }}
           />
+          )}
+
+          {voice.stage !== 'idle' ? null : (
           <Pressable
             onPress={handleSend}
             disabled={!text.trim() || sendMutation.isPending}
+            accessibilityLabel="Send message"
             style={{
               width: 44, height: 44, borderRadius: 22,
-              backgroundColor: text.trim() ? theme.accent : theme.surface,
+              backgroundColor: text.trim() ? theme.accent : theme.surfaceRaised,
               alignItems: 'center', justifyContent: 'center',
               borderWidth: 1, borderColor: text.trim() ? theme.accent : theme.hairline,
             }}
@@ -767,20 +1024,47 @@ function ChatTab({ theme, matchupId, profile, opp, oppAccent, isCompleted }: {
             {sendMutation.isPending ? (
               <ActivityIndicator size="small" color={theme.onAccent} />
             ) : (
-              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={text.trim() ? theme.onAccent : theme.muted} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={text.trim() ? theme.onAccent : theme.muted2} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M22 2 11 13M22 2 15 22l-4-9-9-4 20-7z" />
               </Svg>
             )}
           </Pressable>
+          )}
         </View>
       ) : (
-        <View style={{ paddingHorizontal: 18, paddingVertical: 14, borderTopWidth: 1, borderColor: theme.hairline, alignItems: 'center' }}>
+        <View style={{
+          paddingHorizontal: 18, paddingTop: 14, paddingBottom: 14 + bottomInset,
+          borderTopWidth: 1, borderColor: theme.hairline,
+          backgroundColor: theme.surfaceSunken, alignItems: 'center',
+        }}>
           <Text style={{ fontFamily: FONT.monoMedium, fontSize: 11, color: theme.muted, letterSpacing: 0.8 }}>
-            Game over · Chat is read-only
+            GAME OVER · CHAT IS READ-ONLY
           </Text>
         </View>
       )}
     </KeyboardAvoidingView>
+  );
+}
+
+function DayDivider({ theme, iso }: { theme: Theme; iso: string }) {
+  const d = new Date(iso);
+  const today = new Date();
+  const yest = new Date(Date.now() - 86_400_000);
+  const label =
+    d.toDateString() === today.toDateString()
+      ? 'Today'
+      : d.toDateString() === yest.toDateString()
+        ? 'Yesterday'
+        : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 18, marginBottom: 4 }}>
+      <View style={{ flex: 1, height: 1, backgroundColor: theme.hairline }} />
+      <Text style={{ fontFamily: FONT.monoMedium, fontSize: 9, color: theme.muted2, letterSpacing: 1.2 }}>
+        {label.toUpperCase()}
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: theme.hairline }} />
+    </View>
   );
 }
 

@@ -10,6 +10,9 @@ import { supabase } from '@/lib/supabase';
 import { FONT } from '@/lib/holygrail';
 import type { Theme } from '@/lib/theme';
 import { GifPicker, type GifResult } from '@/components/social/GifPicker';
+import { VoiceRecorderBar } from '@/components/media/VoiceRecorderBar';
+import { VoiceNotePlayer } from '@/components/media/VoiceNotePlayer';
+import { useVoiceNote } from '@/hooks/useVoiceNote';
 
 // =============================================================================
 // Comments on a post. Anyone signed in can comment on anyone's post, provided
@@ -27,6 +30,8 @@ interface CommentRow {
   id: string;
   body: string | null;
   gif_url: string | null;
+  audio_url: string | null;
+  audio_duration_ms: number | null;
   parent_id: string | null;
   created_at: string;
   user_id: string;
@@ -44,6 +49,7 @@ export function CommentsSheet({
   const [gif, setGif] = useState<GifResult | null>(null);
   const [gifOpen, setGifOpen] = useState(false);
   const [replyTo, setReplyTo] = useState<CommentRow | null>(null);
+  const voice = useVoiceNote();
 
   const { data: comments, isLoading } = useQuery({
     queryKey: ['post-comments', postId],
@@ -52,7 +58,7 @@ export function CommentsSheet({
       const { data, error } = await supabase
         .from('social_post_comments')
         .select(`
-          id, body, gif_url, parent_id, created_at, user_id,
+          id, body, gif_url, audio_url, audio_duration_ms, parent_id, created_at, user_id,
           author:profiles!social_post_comments_user_id_fkey(id, username, display_name, avatar_url)
         `)
         .eq('post_id', postId)
@@ -64,15 +70,17 @@ export function CommentsSheet({
   });
 
   const addMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (voiceNote?: { url: string; durationMs: number }) => {
       if (!meId || !postId) throw new Error('Not signed in');
       const body = text.trim();
-      if (!body && !gif) throw new Error('Write something or pick a GIF');
+      if (!body && !gif && !voiceNote) throw new Error('Write something, pick a GIF, or record a note');
       const { error } = await supabase.from('social_post_comments').insert({
         post_id: postId,
         user_id: meId,
         body: body || null,
         gif_url: gif?.url ?? null,
+        audio_url: voiceNote?.url ?? null,
+        audio_duration_ms: voiceNote?.durationMs ?? null,
         parent_id: replyTo?.id ?? null,
       });
       if (error) throw error;
@@ -116,14 +124,21 @@ export function CommentsSheet({
 
   const canSend = (text.trim().length > 0 || !!gif) && !addMutation.isPending;
 
+  const sendVoiceNote = async () => {
+    const note = await voice.upload();
+    if (note) addMutation.mutate(note);
+  };
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable onPress={onClose} style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' }}>
-        <Pressable onPress={(e) => e.stopPropagation()} style={{ height: '80%' }}>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-            style={{ flex: 1, backgroundColor: theme.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}
-          >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.4)' }}
+      >
+        {/* Backdrop and sheet share the column by flex ratio rather than a
+            fixed percentage, so both shrink together as the keyboard opens. */}
+        <Pressable onPress={onClose} accessibilityLabel="Close comments" style={{ flex: 1 }} />
+        <View style={{ flex: 6, backgroundColor: theme.surface, borderTopLeftRadius: 22, borderTopRightRadius: 22 }}>
             <View style={{ alignItems: 'center', paddingTop: 12, paddingBottom: 8 }}>
               <View style={{ width: 40, height: 5, borderRadius: 100, backgroundColor: theme.hairline2 }} />
             </View>
@@ -183,7 +198,7 @@ export function CommentsSheet({
 
                 {gif ? (
                   <View style={{ position: 'relative', alignSelf: 'flex-start' }}>
-                    <Image source={{ uri: gif.preview }} style={{ width: 120, height: 120, borderRadius: 12 }} resizeMode="cover" />
+                    <Image source={{ uri: gif.preview }} style={{ width: 104, aspectRatio: 1.25, borderRadius: 12 }} resizeMode="cover" />
                     <Pressable
                       onPress={() => setGif(null)}
                       accessibilityLabel="Remove GIF"
@@ -197,14 +212,30 @@ export function CommentsSheet({
                 ) : null}
 
                 <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8 }}>
-                  <Pressable
-                    onPress={() => setGifOpen(true)}
-                    accessibilityLabel="Add a GIF"
-                    style={{ width: 40, height: 40, borderRadius: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceSunken, borderWidth: 1, borderColor: theme.hairline }}
-                  >
-                    <Text style={{ fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink }}>GIF</Text>
-                  </Pressable>
+                  {voice.stage !== 'idle' ? null : (
+                    <Pressable
+                      onPress={() => setGifOpen(true)}
+                      accessibilityLabel="Add a GIF"
+                      style={{ width: 40, height: 40, borderRadius: 100, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.surfaceSunken, borderWidth: 1, borderColor: theme.hairline }}
+                    >
+                      <Text style={{ fontFamily: FONT.sansBold, fontSize: 11, color: theme.ink }}>GIF</Text>
+                    </Pressable>
+                  )}
 
+                  <VoiceRecorderBar
+                    theme={theme}
+                    stage={voice.stage}
+                    durationMs={voice.durationMs}
+                    levels={voice.levels}
+                    recordedUri={voice.recordedUri}
+                    uploading={voice.uploading || addMutation.isPending}
+                    onStart={voice.start}
+                    onStop={voice.stop}
+                    onSend={sendVoiceNote}
+                    onDiscard={voice.discard}
+                  />
+
+                  {voice.stage !== 'idle' ? null : (
                   <TextInput
                     value={text}
                     onChangeText={setText}
@@ -220,9 +251,11 @@ export function CommentsSheet({
                       fontFamily: FONT.sans, fontSize: 15, lineHeight: 20,
                     }}
                   />
+                  )}
 
+                  {voice.stage !== 'idle' ? null : (
                   <Pressable
-                    onPress={() => addMutation.mutate()}
+                    onPress={() => addMutation.mutate(undefined)}
                     disabled={!canSend}
                     accessibilityLabel="Send comment"
                     style={{
@@ -238,6 +271,7 @@ export function CommentsSheet({
                       </Svg>
                     )}
                   </Pressable>
+                  )}
                 </View>
               </View>
             ) : (
@@ -247,9 +281,8 @@ export function CommentsSheet({
                 </Text>
               </View>
             )}
-          </KeyboardAvoidingView>
-        </Pressable>
-      </Pressable>
+        </View>
+      </KeyboardAvoidingView>
 
       <GifPicker theme={theme} visible={gifOpen} onClose={() => setGifOpen(false)} onSelect={setGif} />
     </Modal>
@@ -283,10 +316,19 @@ function CommentRowView({
           <Text style={{ fontFamily: FONT.sans, fontSize: 14, lineHeight: 20, color: theme.ink }}>{comment.body}</Text>
         ) : null}
 
+        {comment.audio_url ? (
+          <VoiceNotePlayer
+            url={comment.audio_url}
+            durationMs={comment.audio_duration_ms}
+            theme={theme}
+            compact
+          />
+        ) : null}
+
         {comment.gif_url ? (
           <Image
             source={{ uri: comment.gif_url }}
-            style={{ width: 160, height: 160, borderRadius: 12, backgroundColor: theme.surfaceSunken }}
+            style={{ width: 132, aspectRatio: 1.25, borderRadius: 12, backgroundColor: theme.surfaceSunken }}
             resizeMode="cover"
             accessibilityLabel="GIF reply"
           />

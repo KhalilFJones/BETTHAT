@@ -17,6 +17,7 @@ export interface PlayerMarketRow {
   jersey_number: string | null;
   team_abbreviation: string;
   ticker_handle: string | null;
+  headshot_url: string | null;
   salary_tier: string | null;
   is_injured: boolean;
   injury_note: string | null;
@@ -44,6 +45,8 @@ export interface InProgressLineup {
   total_cap_used: number;
   status: string;
   created_at: string;
+  /** The slate this draft belongs to — a lineup is never valid across dates. */
+  game_date: string | null;
   lineup_players: Array<{
     slot_number: number;
     frozen_price: number;
@@ -53,6 +56,7 @@ export interface InProgressLineup {
       first_name: string | null;
       last_name: string | null;
       ticker_handle: string | null;
+      headshot_url: string | null;
       position: string;
       jersey_number: string | null;
       team_abbreviation: string;
@@ -74,6 +78,7 @@ export interface TrendingRow {
     jersey_number: string | null;
     team_abbreviation: string;
     position: string;
+    headshot_url: string | null;
   };
 }
 
@@ -102,7 +107,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
       is_draftable,
       nba_games!inner(status, tip_off_time),
       nba_players!inner(
-        id, full_name, first_name, last_name, position, jersey_number,
+        id, full_name, first_name, last_name, position, jersey_number, headshot_url,
         team_abbreviation, ticker_handle, salary_tier, is_injured, injury_note,
         season_avg_fpts, last5_avg_fpts,
         player_prices(current_price, price_change_24h, price_change_pct_24h, is_locked, lock_reason, market_close_at, demand_count_1h, total_selections)
@@ -125,14 +130,15 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
     supabase
       .from('lineups')
       .select(`
-        id, total_cap_used, status, created_at,
+        id, total_cap_used, status, created_at, game_date,
         lineup_players(
           slot_number, frozen_price,
-          nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation)
+          nba_players(id, full_name, first_name, last_name, ticker_handle, position, jersey_number, team_abbreviation, headshot_url)
         )
       `)
       .eq('user_id', userId)
       .eq('status', 'building')
+      .eq('game_date', slateDate)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -142,7 +148,7 @@ async function fetchMarket(userId: string, slateDate: string): Promise<MarketDat
           .from('player_prices')
           .select(`
             player_id, current_price, price_change_pct_24h, demand_count_1h,
-            nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position)
+            nba_players!inner(id, full_name, first_name, last_name, ticker_handle, jersey_number, team_abbreviation, position, headshot_url)
           `)
           .in('player_id', tonightPlayerIds)
           .order('demand_count_1h', { ascending: false })

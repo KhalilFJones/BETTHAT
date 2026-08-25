@@ -11,6 +11,7 @@ import {
 import { Link } from 'expo-router';
 import { supabase } from '@/lib/supabase';
 import { FONT } from '@/lib/holygrail';
+import { BrandLogo } from '@/components/brand/BrandLogo';
 import { useTheme, type Theme } from '@/lib/theme';
 import { OAuthButtons } from '@/components/OAuthButtons';
 
@@ -52,9 +53,7 @@ export default function LoginScreen() {
       >
         <View>
           {/* Brand wordmark */}
-          <Text style={{ fontFamily: FONT.monoBold, fontSize: 36, color: theme.ink, letterSpacing: 6, textAlign: 'center' }}>
-            BETTHAT
-          </Text>
+          <BrandLogo theme={theme} size={58} variant="full" style={{ alignSelf: 'center' }} />
           <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted, textAlign: 'center', marginTop: 8, fontStyle: 'italic' }}>
             Draft the market.
           </Text>

@@ -22,6 +22,8 @@ import Svg, { Defs, LinearGradient, Rect, Stop } from 'react-native-svg';
 
 import { useAuth } from '@/hooks/useAuth';
 import { FONT } from '@/lib/holygrail';
+import { BrandLogo } from '@/components/brand/BrandLogo';
+import { DARK } from '@/lib/theme';
 
 // ── Art direction ───────────────────────────────────────────────────────────
 // The hero court shot is a placeholder in the design export and there's no
@@ -93,24 +95,16 @@ export default function Index() {
         {/* Brand block — the export centres the 153px puck at ~49% of the
             screen with the wordmark 52px beneath it. */}
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-          <View
-            style={{
-              width: 153, height: 153, borderRadius: 9999, backgroundColor: '#D9D9D9',
-              alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-            }}
-          >
-            {LOGO_MARK ? (
-              <Image source={LOGO_MARK} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-            ) : (
-              <Text style={{ fontFamily: FONT.sansMedium, fontSize: 48, lineHeight: 56, color: '#000000' }}>
-                Logo
-              </Text>
-            )}
-          </View>
+          {LOGO_MARK ? (
+            <Image source={LOGO_MARK} style={{ width: 153, height: 153 }} resizeMode="contain" />
+          ) : (
+            /* The splash always sits on art or on black, so the light half is
+               forced white rather than following the theme. */
+            <BrandLogo theme={DARK} size={72} variant="full" onDark />
+          )}
 
-          <Text style={{ marginTop: 52, fontSize: 16, lineHeight: 24, color: '#FFFFFF', textAlign: 'center' }}>
-            <Text style={{ fontFamily: FONT.sansBold }}>BETTHAT</Text>
-            <Text style={{ fontFamily: FONT.sans }}> Fantasy</Text>
+          <Text style={{ marginTop: 40, fontFamily: FONT.sans, fontSize: 13, lineHeight: 20, color: 'rgba(255,255,255,0.72)', textAlign: 'center', letterSpacing: 0.4 }}>
+            Draft the market.
           </Text>
         </View>
 

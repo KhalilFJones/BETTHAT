@@ -4,7 +4,7 @@
 // LeaderBoard (lightweight lists — the export only specifies Feed).
 //
 // A post is free text plus an optional attached player card: the spec's Stock
-// block with a ticker/name row, a price-change pill, a "Bought at hh:mm" line
+// block with a headshot/name row, a price-change pill, a "Bought at hh:mm" line
 // and a Buy / Sell footer button that deep-links into the market.
 //
 // Price-direction green/red are the spec's row-level tokens (#36A34C /
@@ -24,8 +24,9 @@ import Svg, { Path, Circle } from 'react-native-svg';
 
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { FONT, fmtPrice } from '@/lib/holygrail';
+import { FONT, fmtPrice, fmtTime } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
+import { PlayerHeadshot } from '@/components/media/PlayerHeadshot';
 import { SharedMatchupCard, type MatchupSnapshot } from '@/components/social/SharedMatchupCard';
 import { CommentsSheet } from '@/components/social/CommentsSheet';
 import { useFollowing, useFriendIds, useFollowMutation } from '@/hooks/social/useSocialGraph';
@@ -59,6 +60,7 @@ interface FeedPost {
   author: { id: string; username: string; display_name: string | null; avatar_url: string | null } | null;
   player: {
     id: string; full_name: string; ticker_handle: string | null; team_abbreviation: string;
+    headshot_url: string | null;
     player_prices: { current_price: number; price_change_24h: number | null; price_change_pct_24h: number | null } | null;
   } | null;
   likes: { count: number }[];
@@ -75,7 +77,7 @@ function useFeed(userId: string | undefined) {
           id, body, attachment_kind, attachment_price, attachment_at, share_count, created_at,
           allow_comments, gif_url, matchup_id, matchup_snapshot,
           author:profiles!social_posts_user_id_fkey(id, username, display_name, avatar_url),
-          player:nba_players(id, full_name, ticker_handle, team_abbreviation,
+          player:nba_players(id, full_name, ticker_handle, team_abbreviation, headshot_url,
             player_prices(current_price, price_change_24h, price_change_pct_24h)),
           likes:social_post_likes(count),
           comments:social_post_comments(count)
@@ -312,7 +314,7 @@ export default function SocialScreen() {
       <View style={{ height: 8 }} />
 
       {segment === 'leaderboard' ? (
-        <LeaderboardSegment theme={theme} router={router} meId={profile?.id} />
+        <LeaderboardSegment theme={theme} meId={profile?.id} />
       ) : (
         <FlatList
           data={visiblePosts}
@@ -445,7 +447,10 @@ const PostCard = memo(function PostCard({
       {post.gif_url ? (
         <Image
           source={{ uri: post.gif_url }}
-          style={{ width: '100%', aspectRatio: 1, borderRadius: 16, backgroundColor: theme.surfaceSunken }}
+          style={{
+            width: 200, aspectRatio: 1.25, alignSelf: 'flex-start',
+            borderRadius: 14, backgroundColor: theme.surfaceSunken,
+          }}
           resizeMode="cover"
           accessibilityLabel="GIF"
         />
@@ -506,22 +511,19 @@ function AttachedPosition({ post, theme, onPress }: { post: FeedPost; theme: The
   const up = pct >= 0;
   const color = up ? theme.gain : theme.danger;
   const wash = up ? 'rgba(42, 127, 59, 0.10)' : 'rgba(240, 93, 93, 0.10)';
-  const ticker = (p.ticker_handle ?? p.full_name ?? '').toUpperCase();
   const isBuy = post.attachment_kind === 'buy';
 
   return (
     <View style={{ borderRadius: 16, borderWidth: 1, borderColor: theme.hairline, overflow: 'hidden' }}>
       <View style={{ padding: 12, flexDirection: 'row', alignItems: 'center', gap: 8, borderBottomWidth: 1, borderColor: theme.hairline }}>
         <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-          <View style={{ width: 40, height: 40, borderRadius: 100, backgroundColor: theme.surfaceSunken, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontFamily: FONT.sansBold, fontSize: 16, lineHeight: 24, color: theme.ink }}>
-              {(ticker || '?').charAt(0)}
-            </Text>
-          </View>
+          <PlayerHeadshot player={p} theme={theme} size={40} showTeamCrest />
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>{ticker}</Text>
+            <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>
+              {p.full_name}
+            </Text>
             <Text numberOfLines={1} style={{ fontFamily: FONT.sans, fontSize: 14, lineHeight: 21, color: theme.muted2 }}>
-              {p.full_name} - {p.team_abbreviation}
+              {p.team_abbreviation}
             </Text>
           </View>
         </View>
@@ -549,7 +551,7 @@ function AttachedPosition({ post, theme, onPress }: { post: FeedPost; theme: The
         </View>
         <Pressable
           onPress={onPress}
-          accessibilityLabel={`${isBuy ? 'Draft' : 'View'} ${ticker}`}
+          accessibilityLabel={`${isBuy ? 'Draft' : 'View'} ${p.full_name}`}
           style={{
             height: 48, borderRadius: 100, alignItems: 'center', justifyContent: 'center',
             backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.hairline,
@@ -615,10 +617,10 @@ function HighlightedBody({ text, theme }: { text: string; theme: Theme }) {
 }
 
 function formatPostDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 function formatPostTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+  return fmtTime(iso);
 }
 
 // =============================================================================
@@ -658,38 +660,103 @@ function EmptyState({ theme, title, body, onRetry }: { theme: Theme; title: stri
 // scoping; only the board is a different shape.
 // =============================================================================
 
-function LeaderboardSegment({ theme, router, meId }: { theme: Theme; router: ReturnType<typeof useRouter>; meId?: string }) {
+type BoardPeriod = 'weekly' | 'monthly' | 'all_time';
+
+const BOARD_PERIODS: Array<{ key: BoardPeriod; label: string }> = [
+  { key: 'weekly', label: 'This Week' },
+  { key: 'monthly', label: 'This Month' },
+  { key: 'all_time', label: 'All Time' },
+];
+
+const MEDAL = ['🥇', '🥈', '🥉'];
+
+function LeaderboardSegment({ theme, meId }: { theme: Theme; meId?: string }) {
   const s = styles(theme);
+  const [period, setPeriod] = useState<BoardPeriod>('weekly');
+
   const { data, isLoading } = useQuery({
-    queryKey: ['social-leaderboard'],
+    queryKey: ['social-leaderboard', period],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('leaderboard_entries')
         .select('rank, score, wins, losses, win_rate, user:profiles(id, username, display_name, avatar_url)')
-        .eq('period_type', 'weekly')
+        .eq('period_type', period)
         .order('rank', { ascending: true })
-        .limit(25);
+        .limit(50);
       if (error) throw error;
       return data ?? [];
     },
   });
 
+  const rows = (data ?? []) as any[];
+  const mine = rows.find((r) => r.user?.id === meId);
+
   return (
     <ScrollView contentContainerStyle={{ gap: 8, paddingBottom: NAV_CLEARANCE }} showsVerticalScrollIndicator={false}>
-      <View style={[s.card, { padding: 16, gap: 14 }]}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Text style={s.sectionTitle}>This week</Text>
-          <Pressable onPress={() => router.push('/leaderboard' as any)} hitSlop={8}>
-            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.muted }}>Full board</Text>
-          </Pressable>
+      {/* Period switch */}
+      <View style={{ flexDirection: 'row', gap: 8, paddingHorizontal: 2 }}>
+        {BOARD_PERIODS.map((p) => {
+          const active = period === p.key;
+          return (
+            <Pressable
+              key={p.key}
+              onPress={() => setPeriod(p.key)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={{
+                flex: 1, height: 36, borderRadius: 100,
+                alignItems: 'center', justifyContent: 'center',
+                backgroundColor: active ? theme.accent : theme.surfaceSunken,
+                borderWidth: 1, borderColor: active ? theme.accent : theme.hairline,
+              }}
+            >
+              <Text
+                numberOfLines={1}
+                style={{
+                  fontFamily: active ? FONT.sansBold : FONT.sansMedium,
+                  fontSize: 13,
+                  color: active ? theme.onAccent : theme.muted,
+                }}
+              >
+                {p.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Your standing, pinned above the table so it survives a long list. */}
+      {mine ? (
+        <View
+          style={{
+            flexDirection: 'row', alignItems: 'center', gap: 12,
+            padding: 14, borderRadius: 16,
+            backgroundColor: theme.accentWash,
+            borderWidth: 1, borderColor: theme.accentEdge,
+          }}
+        >
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 22, color: theme.accentInk }}>#{mine.rank}</Text>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontFamily: FONT.sansMedium, fontSize: 13, color: theme.ink }}>Your rank</Text>
+            <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.muted2, marginTop: 2 }}>
+              {mine.wins}W {mine.losses}L · {Number(mine.win_rate ?? 0).toFixed(0)}% win rate
+            </Text>
+          </View>
+          <Text style={{ fontFamily: FONT.monoBold, fontSize: 16, color: theme.accentInk }}>{fmtPrice(mine.score)}</Text>
         </View>
+      ) : null}
+
+      <View style={[s.card, { padding: 16, gap: 14 }]}>
         {isLoading ? (
           <ActivityIndicator color={theme.accent} />
-        ) : (data ?? []).length === 0 ? (
-          <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted }}>No entries for this week yet.</Text>
+        ) : rows.length === 0 ? (
+          <Text style={{ fontFamily: FONT.sans, fontSize: 13, color: theme.muted }}>
+            No entries for this period yet.
+          </Text>
         ) : (
-          (data ?? []).map((row: any) => {
+          rows.map((row: any) => {
             const isMe = row.user?.id === meId;
+            const medal = row.rank <= 3 ? MEDAL[row.rank - 1] : null;
             return (
               <View
                 key={`${row.rank}-${row.user?.id}`}
@@ -699,11 +766,18 @@ function LeaderboardSegment({ theme, router, meId }: { theme: Theme; router: Ret
                   borderRadius: 12, backgroundColor: isMe ? theme.accentWash : 'transparent',
                 }}
               >
-                <Text style={{ width: 24, fontFamily: FONT.sansBold, fontSize: 14, color: theme.muted }}>{row.rank}</Text>
+                <View style={{ width: 26, alignItems: 'center' }}>
+                  {medal ? (
+                    <Text style={{ fontSize: 16 }}>{medal}</Text>
+                  ) : (
+                    <Text style={{ fontFamily: FONT.sansBold, fontSize: 14, color: theme.muted }}>{row.rank}</Text>
+                  )}
+                </View>
                 <Avatar theme={theme} uri={row.user?.avatar_url ?? null} name={row.user?.display_name || row.user?.username || '?'} size={36} />
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>
                     {row.user?.display_name || row.user?.username || 'Unknown'}
+                    {isMe ? ' (You)' : ''}
                   </Text>
                   <Text style={{ fontFamily: FONT.sans, fontSize: 12, lineHeight: 18, color: theme.muted2 }}>
                     {row.wins}W – {row.losses}L · {Number(row.win_rate ?? 0).toFixed(0)}%

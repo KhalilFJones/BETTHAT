@@ -32,8 +32,12 @@ const HERO_BG = '#151517';
 const HERO_MUTED = '#C4C4C5';
 const HERO_DIM = '#67676A';
 const HERO_HAIRLINE = '#D9D9DA';
-const ACCENT = '#F0F600';
-const ACCENT_TRACK = '#9EA200';
+const ACCENT = '#CE5A12';       // brand — chrome only, never an outcome
+const ACCENT_TRACK = '#A8460D'; // rank progress: progress, not a result
+// Outcome colours. This screen is permanently dark, so these are the dark-mode
+// values from lib/theme.ts rather than the light ones.
+const WIN_GREEN = '#3FBE59';
+const LOSS_RED = '#D6453C';
 const LOSS_INK = '#8A8A8E';
 const STAT_KEYS = ['PTS', 'REB', 'AST', 'STL', 'TO'] as const;
 
@@ -58,8 +62,8 @@ export default function MatchResultScreen() {
           user1_final_score, user2_final_score, user1_score, user2_score,
           u1:profiles!matchups_user1_id_fkey(id, username, display_name, rank_tier, total_wins, total_earnings),
           u2:profiles!matchups_user2_id_fkey(id, username, display_name, rank_tier, total_wins, total_earnings),
-          l1:lineups!matchups_lineup1_id_fkey(id, lineup_players(slot_number, nba_players(id, full_name, team_abbreviation))),
-          l2:lineups!matchups_lineup2_id_fkey(id, lineup_players(slot_number, nba_players(id, full_name, team_abbreviation)))
+          l1:lineups!matchups_lineup1_id_fkey(id, lineup_players(slot_number, nba_players(id, full_name, team_abbreviation, headshot_url))),
+          l2:lineups!matchups_lineup2_id_fkey(id, lineup_players(slot_number, nba_players(id, full_name, team_abbreviation, headshot_url)))
         `)
         .eq('id', id)
         .maybeSingle();
@@ -110,6 +114,8 @@ export default function MatchResultScreen() {
             return {
               id: p?.id,
               name: p?.full_name ?? 'Unknown',
+              headshot_url: p?.headshot_url ?? null,
+              team: p?.team_abbreviation ?? null,
               vs,
               fp: Number(st?.fantasy_points ?? 0),
               PTS: st?.points ?? 0,
@@ -201,7 +207,7 @@ export default function MatchResultScreen() {
                 <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: HERO_MUTED }}>
                   Match Over
                 </Text>
-                <Text style={{ fontFamily: FONT.sansBold, fontSize: 36, lineHeight: 46.8, color: won ? ACCENT : LOSS_INK }}>
+                <Text style={{ fontFamily: FONT.sansBold, fontSize: 36, lineHeight: 46.8, color: won ? WIN_GREEN : LOSS_RED }}>
                   {won ? 'WINNER' : 'LOSER'}
                 </Text>
               </View>
@@ -217,13 +223,13 @@ export default function MatchResultScreen() {
               </Pressable>
             </View>
 
-            {/* Score line — the winning figure carries the accent */}
+            {/* Score line — the winning figure is green, the losing one red */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
-              <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: won ? ACCENT : '#FFFFFF' }}>
+              <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: won ? WIN_GREEN : LOSS_RED }}>
                 {data.myScore.toFixed(1)}
               </Text>
               <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: '#FFFFFF' }}>-</Text>
-              <Text style={{ fontFamily: won ? FONT.sansMedium : FONT.sansBold, fontSize: 24, lineHeight: 36, color: won ? '#FFFFFF' : ACCENT }}>
+              <Text style={{ fontFamily: won ? FONT.sansMedium : FONT.sansBold, fontSize: 24, lineHeight: 36, color: won ? '#FFFFFF' : WIN_GREEN }}>
                 {data.theirScore.toFixed(1)}
               </Text>
             </View>
@@ -244,10 +250,10 @@ export default function MatchResultScreen() {
                 <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: HERO_DIM }}>Entry</Text>
               </View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 4 }}>
-                <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: ACCENT }}>
+                <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: data.payout > 0 ? WIN_GREEN : HERO_DIM }}>
                   +{data.payout.toFixed(2)}
                 </Text>
-                <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: HERO_DIM }}>
+                <Text style={{ fontFamily: FONT.sansBold, fontSize: 24, lineHeight: 36, color: LOSS_RED }}>
                   -{data.entry.toFixed(0)}
                 </Text>
               </View>

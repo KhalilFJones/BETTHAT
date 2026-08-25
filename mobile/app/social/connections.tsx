@@ -138,28 +138,24 @@ export default function ConnectionsScreen() {
       </View>
 
       {/* Tabs with counts */}
-      <FlatList
-        data={TABS}
-        keyExtractor={(t) => t.key}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, gap: 20, paddingBottom: 10 }}
-        renderItem={({ item }) => {
+      <View style={{ flexDirection: 'row', paddingHorizontal: 16, gap: 20, paddingBottom: 10 }}>
+        {TABS.map((item) => {
           const active = tab === item.key;
           return (
             <Pressable
+              key={item.key}
               onPress={() => setTab(item.key)}
               accessibilityRole="button"
               accessibilityState={{ selected: active }}
               style={{ paddingBottom: 8, borderBottomWidth: 2, borderColor: active ? theme.ink : 'transparent' }}
             >
               <Text style={{ fontFamily: active ? FONT.sansBold : FONT.sans, fontSize: 15, color: active ? theme.ink : theme.muted }}>
-                {item.label} {counts[item.key] > 0 ? counts[item.key] : ''}
+                {item.label}{counts[item.key] > 0 ? ` ${counts[item.key]}` : ''}
               </Text>
             </Pressable>
           );
-        }}
-      />
+        })}
+      </View>
 
       <View style={{ paddingHorizontal: 16, paddingBottom: 10 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', height: 44, paddingHorizontal: 12, gap: 8, backgroundColor: theme.surfaceSunken, borderRadius: 10 }}>
@@ -190,6 +186,7 @@ export default function ConnectionsScreen() {
         <FlatList
           data={rows}
           keyExtractor={(p) => p.id}
+          style={{ flex: 1 }}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 40, gap: 4 }}
           keyboardShouldPersistTaps="handled"
           renderItem={({ item }) => (

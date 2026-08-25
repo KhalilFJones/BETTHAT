@@ -10,7 +10,7 @@
 //      full-bleed price ticker, a 48px "Search index" field with a trailing
 //      glyph, and a "Filter" label beside five multi-select position chips.
 //   2. "All Active Players" card — a 3-up grid of 110-wide player cards, each
-//      carrying ticker / name / team, price + % change, five form dots over
+//      carrying position / name / team, price + % change, five form dots over
 //      the last-5 average, and a "+ Add" pill.
 // A docked "Your lineup" sheet sits over the bottom once a pick is made:
 // grab handle, title, a 122-wide cap track with "Cap left : x", and the
@@ -20,12 +20,12 @@
 // #F05D5D == theme.gain / theme.danger), NOT theme.up/theme.down.
 // =============================================================================
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   View, Text, ScrollView, Pressable, TextInput, FlatList, ActivityIndicator,
   RefreshControl, Modal, Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,6 +37,8 @@ import { FONT, fmtPrice, SALARY_CAP, LINEUP_SIZE } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
 import { MarketTicker } from '@/components/market/MarketTicker';
 import { StockRow } from '@/components/market/StockRow';
+import { PlayerHeadshot } from '@/components/media/PlayerHeadshot';
+import { TeamLogo } from '@/components/media/TeamLogo';
 import {
   usePlayerMarket,
   useUpcomingSlates,
@@ -48,6 +50,10 @@ import { recomputeLineupCap } from '@/hooks/holygrail/lineupOps';
 // The export's filter row is five position chips with no "All" — an empty
 // selection means no position filter, and chips multi-select (PG + SG are
 // both active in the reference frame).
+const NAV_CLEARANCE = 120; // docked nav pill + safe area
+
+// Shared empty array — a new [] per render would break PlayerCard's memo.
+const EMPTY_FORM: number[] = [];
 const POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'] as const;
 type Position = (typeof POSITIONS)[number];
 
@@ -55,7 +61,7 @@ type Position = (typeof POSITIONS)[number];
 // reads green, within 25% of it amber, below that red.
 const FORM_GOOD = '#36A34C';
 const FORM_OK = '#FFEFA4';
-const FORM_BAD = '#E39898';
+const FORM_BAD = '#C0645F';
 const GREY_400 = '#AAAAAC'; // "Filter" label + inactive chip fill in the export
 
 const PRICE_BUCKETS = [
@@ -193,7 +199,7 @@ export default function PlayerMarketScreen() {
     return data.tonight
       .filter((p) => p.player_prices?.price_change_pct_24h != null)
       .map((p) => ({
-        ticker: (p.ticker_handle ?? p.full_name ?? '').toUpperCase(),
+        name: p.full_name,
         price: Number(p.player_prices!.current_price),
         pctChange: Number(p.player_prices!.price_change_pct_24h ?? 0),
       }))
@@ -218,7 +224,20 @@ export default function PlayerMarketScreen() {
       await recomputeLineupCap(lineupId);
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['player-market'] }),
-    onError: (err: any) => Alert.alert('Could not add player', err?.message ?? 'Try again.'),
+    onError: (err: any, vars) => {
+      const raw = err?.message ?? '';
+      // reject_started_game_pick() names the player by uuid, which is useless
+      // in an alert. Say who it was and refresh so the tile shows LOCKED.
+      if (/already started|is locked/i.test(raw)) {
+        qc.invalidateQueries({ queryKey: ['player-market'] });
+        Alert.alert(
+          'Too late for this one',
+          `${vars.player.full_name}'s game has already tipped off, so they can't be drafted.`,
+        );
+        return;
+      }
+      Alert.alert('Could not add player', raw || 'Try again.');
+    },
   });
 
   const removeMutation = useMutation({
@@ -239,6 +258,41 @@ export default function PlayerMarketScreen() {
   const picked = lineup?.lineup_players ?? [];
   const isFull = picked.length >= LINEUP_SIZE;
   const mutating = addMutation.isPending || removeMutation.isPending;
+
+  // Disabling every card while an add/remove is in flight closes two races:
+  // (1) double-tapping the same card before the first insert resolves —
+  // `pickedIds` is still stale, so a second tap would read "not picked" and
+  // fire another insert; (2) tapping two different cards back-to-back before
+  // `lineup` refetches — both calls would see lineup=null and each create
+  // their own 'building' lineup row.
+  const openPlayer = useCallback(
+    (id: string) => router.push(`/player/${id}` as any),
+    [router],
+  );
+
+  const togglePlayer = useCallback((player: PlayerMarketRow) => {
+    if (pickedIds.has(player.id)) removeMutation.mutate(player.id);
+    else addMutation.mutate({ player, price: Number(player.player_prices!.current_price) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pickedIds]);
+
+  const renderPlayer = useCallback(
+    ({ item }: { item: PlayerMarketRow | null }) =>
+      item == null ? (
+        <View style={{ flex: 1 }} />
+      ) : (
+        <PlayerCard
+          player={item}
+          theme={theme}
+          form={data?.form.get(item.id) ?? EMPTY_FORM}
+          isPicked={pickedIds.has(item.id)}
+          disabled={mutating || (isFull && !pickedIds.has(item.id))}
+          onPress={openPlayer}
+          onToggle={togglePlayer}
+        />
+      ),
+    [theme, data?.form, pickedIds, mutating, isFull, openPlayer, togglePlayer],
+  );
 
   // If the lineup empties out while the sticky sheet is expanded (bar itself
   // unmounts since it's only rendered for picked.length > 0), don't leave the
@@ -264,7 +318,7 @@ export default function PlayerMarketScreen() {
       {/* ═══ Top Bar card ═══════════════════════════════════════════════════ */}
       <View style={s.card}>
         <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-          <RoundIconBtn theme={theme} label="Connections" onPress={() => router.push('/social/connections' as any)}>
+          <RoundIconBtn theme={theme} label="Back to home" onPress={() => router.replace('/(tabs)/home' as any)}>
             <Svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke={theme.ink} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
               <Path d="m15 18-6-6 6-6" />
             </Svg>
@@ -365,34 +419,16 @@ export default function PlayerMarketScreen() {
           numColumns={3}
           style={{ flex: 1 }}
           columnWrapperStyle={{ gap: 16 }}
-          contentContainerStyle={{ gap: 16, paddingBottom: picked.length > 0 ? 180 : 16 }}
+          contentContainerStyle={{ gap: 16, paddingBottom: picked.length > 0 ? 250 : NAV_CLEARANCE }}
           keyboardShouldPersistTaps="handled"
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={theme.accent} colors={[theme.accent]} />
           }
-          renderItem={({ item }) => (
-            item == null ? <View style={{ flex: 1 }} /> : (
-            <PlayerCard
-              player={item}
-              theme={theme}
-              form={data?.form.get(item.id) ?? []}
-              isPicked={pickedIds.has(item.id)}
-              // Disabling every card while an add/remove is in flight closes
-              // two races: (1) double-tapping the same card before the first
-              // insert resolves — `pickedIds` is still stale, so a second tap
-              // would read "not picked" and fire another insert; (2) tapping
-              // two different cards back-to-back before `lineup` refetches —
-              // both calls would see lineup=null and each create their own
-              // 'building' lineup row.
-              disabled={mutating || (isFull && !pickedIds.has(item.id))}
-              onPress={() => router.push(`/player/${item.id}` as any)}
-              onToggle={() => {
-                if (pickedIds.has(item.id)) removeMutation.mutate(item.id);
-                else addMutation.mutate({ player: item, price: Number(item.player_prices!.current_price) });
-              }}
-            />
-            )
-          )}
+          renderItem={renderPlayer}
+          removeClippedSubviews
+          initialNumToRender={12}
+          maxToRenderPerBatch={9}
+          windowSize={7}
           ListEmptyComponent={
             isLoading ? (
               <View style={{ padding: 60, alignItems: 'center' }}>
@@ -459,11 +495,15 @@ export default function PlayerMarketScreen() {
 
 function upNextSlateLabel(date: string): string {
   const d = new Date(date + 'T12:00:00Z');
-  return d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' });
+  return d.toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' });
 }
 
 async function ensureBuildingLineup(userId: string, existing: InProgressLineup | null, slateDate: string): Promise<string> {
-  if (existing?.id) return existing.id;
+  // Only reuse a draft that belongs to the slate being viewed. Reusing one
+  // from an earlier date is what produced "their game has already started":
+  // reject_started_game_pick() checks the LINEUP's game_date, so yesterday's
+  // lineup rejects every one of today's players.
+  if (existing?.id && existing.game_date === slateDate) return existing.id;
   const { data, error } = await supabase
     .from('lineups')
     .insert({ user_id: userId, entry_tier: 5, status: 'building', total_cap_used: 0, game_date: slateDate })
@@ -513,34 +553,46 @@ function RoundIconBtn({ theme, label, onPress, children }: { theme: Theme; label
 // PLAYER CARD — the export's 110x116 grid tile
 // =============================================================================
 
-function PlayerCard({
+// memo(): the grid holds ~190 of these, so a parent re-render (a keystroke in
+// search, a 60s refetch) would otherwise rebuild every card — each with an
+// image, a crest and an SVG. Callbacks take the player so their identity can
+// stay stable across renders.
+const PlayerCard = memo(function PlayerCard({
   player, theme, form, isPicked, disabled, onPress, onToggle,
 }: {
   player: PlayerMarketRow; theme: Theme; form: number[]; isPicked: boolean; disabled: boolean;
-  onPress: () => void; onToggle: () => void;
+  onPress: (playerId: string) => void; onToggle: (player: PlayerMarketRow) => void;
 }) {
   const pp = player.player_prices!;
   const isLocked = pp.is_locked;
   const color = dirColor(pp.price_change_pct_24h, theme);
   const pct = Number(pp.price_change_pct_24h ?? 0);
-  const ticker = (player.ticker_handle ?? '').toUpperCase();
   const addDisabled = disabled || isLocked;
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => onPress(player.id)}
       accessibilityLabel={`View ${player.full_name}`}
       style={{
-        flex: 1, minHeight: 116, padding: 12, gap: 4, borderRadius: 16,
+        flex: 1, minHeight: 150, padding: 12, gap: 5, borderRadius: 16, overflow: 'hidden',
         backgroundColor: theme.surface,
         borderWidth: 1, borderColor: isPicked ? theme.accentEdge : theme.hairline,
         opacity: isLocked ? 0.5 : 1,
       }}
     >
+      {/* Club crest, watermarked into the top-right corner of the tile. */}
+      <View
+        pointerEvents="none"
+        style={{ position: 'absolute', right: -8, top: -6, opacity: theme.mode === 'light' ? 0.07 : 0.13 }}
+      >
+        <TeamLogo abbreviation={player.team_abbreviation} size={62} theme={theme} />
+      </View>
+
       {/* Identity */}
+      <PlayerHeadshot player={player} theme={theme} size={38} shape="rounded" showTeamCrest />
       <View>
         <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 7, lineHeight: 10.5, color: theme.muted2 }}>
-          {ticker || ' '}
+          {player.position || ' '}
         </Text>
         <Text numberOfLines={1} style={{ fontFamily: FONT.sansBold, fontSize: 12, lineHeight: 18, color: theme.ink }}>
           {player.full_name}
@@ -576,7 +628,7 @@ function PlayerCard({
         </View>
 
         <Pressable
-          onPress={(e) => { e.stopPropagation(); if (!addDisabled) onToggle(); }}
+          onPress={(e) => { e.stopPropagation(); if (!addDisabled) onToggle(player); }}
           disabled={addDisabled}
           hitSlop={6}
           accessibilityLabel={isPicked ? `Remove ${player.full_name} from lineup` : `Add ${player.full_name} to lineup`}
@@ -598,7 +650,7 @@ function PlayerCard({
       </View>
     </Pressable>
   );
-}
+});
 
 // =============================================================================
 // "YOUR LINEUP" SHEET — docked header ⇄ expanded roster
@@ -611,6 +663,7 @@ function LineupSheet({
   expanded: boolean; mutating: boolean; onToggleExpand: () => void; onPlaceOrder: () => void;
   onPlayerPress: (playerId: string) => void; onRemove: (playerId: string) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const picked = lineup?.lineup_players ?? [];
   const capUsed = Number(lineup?.total_cap_used ?? 0);
   const capLeft = SALARY_CAP - capUsed;
@@ -626,7 +679,10 @@ function LineupSheet({
         backgroundColor: theme.surface,
         borderTopLeftRadius: 20, borderTopRightRadius: 20,
         borderWidth: 1, borderColor: theme.hairline2,
-        paddingTop: 16, paddingHorizontal: 16, paddingBottom: 24,
+        paddingTop: 16, paddingHorizontal: 16,
+        // Clear the floating nav pill (bottom: insets.bottom + 8, height 56)
+        // plus a little breathing room, so the CTA is never underneath it.
+        paddingBottom: insets.bottom + 76,
         gap: 10,
       }}
     >

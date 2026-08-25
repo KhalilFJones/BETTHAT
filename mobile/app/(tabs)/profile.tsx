@@ -27,6 +27,7 @@ import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
 import { FONT, fmtPrice, fmtPriceShort } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
+import { EditableAvatar } from '@/components/media/EditableAvatar';
 import { useFollowCounts } from '@/hooks/social/useSocialGraph';
 
 const RANK_COLOR: Record<string, string> = {
@@ -71,6 +72,25 @@ export default function ProfileScreen() {
   const router = useRouter();
   const { profile, signOut, setProfile } = useAuthStore();
   const qc = useQueryClient();
+
+  // Clearing the photo drops the profiles reference; the object itself is left
+  // in the bucket rather than deleted, so an in-flight render can't 404.
+  const removeAvatar = () => {
+    Alert.alert('Remove photo', 'Your profile will show your initials instead.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Remove',
+        style: 'destructive',
+        onPress: async () => {
+          if (!profile?.id) return;
+          const { error } = await supabase.from('profiles').update({ avatar_url: null }).eq('id', profile.id);
+          if (error) { Alert.alert('Could not remove photo', error.message); return; }
+          setProfile({ ...(profile as any), avatar_url: null });
+          qc.invalidateQueries();
+        },
+      },
+    ]);
+  };
 
   const [tab, setTab] = useState<'overview' | 'stats' | 'friends'>('overview');
   const [range, setRange] = useState<Range>('1D');
@@ -283,11 +303,12 @@ export default function ProfileScreen() {
       >
         {/* Header card */}
         <View style={[s.card, { alignItems: 'center', paddingVertical: 22, marginTop: 4 }]}>
-          <Avatar
+          <EditableAvatar
             uri={profile?.avatar_url}
             initials={(profile?.display_name ?? profile?.username ?? '??').slice(0, 2).toUpperCase()}
             size={88}
             theme={theme}
+            onRemove={removeAvatar}
           />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 14 }}>
             <Text style={{ fontFamily: FONT.sansBold, fontSize: 20, color: theme.ink, letterSpacing: -0.2 }}>
@@ -730,7 +751,7 @@ function StackedAvatars({ initials, theme }: { initials: string[]; theme: Theme 
 function GameRow({ theme, won, name, date, amount, score }: { theme: Theme; won: boolean; name: string; date: string; amount: number; score: string }) {
   return (
     <>
-      <View style={{ width: 40, height: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: won ? theme.accent : theme.loss }}>
+      <View style={{ width: 40, height: 40, borderRadius: 999, alignItems: 'center', justifyContent: 'center', backgroundColor: won ? theme.win : theme.loss }}>
         <Text style={{ fontFamily: FONT.sansBold, fontSize: 16, color: won ? theme.onAccent : theme.ink }}>{won ? 'W' : 'L'}</Text>
       </View>
       <View style={{ flex: 1, marginLeft: 12 }}>
@@ -750,7 +771,7 @@ function GameRow({ theme, won, name, date, amount, score }: { theme: Theme; won:
 function ChangePill({ amount, pct, suffix, theme }: { amount: number; pct: number; suffix?: string; theme: Theme }) {
   const positive = amount >= 0;
   const c = positive ? theme.gain : theme.danger;
-  const bg = positive ? theme.gainSoft : 'rgba(240,93,93,0.12)';
+  const bg = positive ? theme.gainSoft : 'rgba(150, 2, 0, 0.14)';
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 10, borderRadius: 999, backgroundColor: bg }}>
       <Text style={{ fontFamily: FONT.sansBold, fontSize: 11, color: c }}>{positive ? '▲' : '▼'}</Text>
@@ -958,6 +979,11 @@ function NetWinningsChart({ values, theme }: { values: number[]; theme: Theme })
   const activeIdx = touchIdx ?? defaultIdx;
   const val = geom ? values[activeIdx] : 0;
   const base = values[0];
+  // The curve follows its own direction: up over the period is green, down is
+  // red. It was previously green regardless, which made a losing week read as
+  // a winning one.
+  const netUp = !geom || values[values.length - 1] >= base;
+  const curve = netUp ? theme.gain : theme.danger;
   const pct = geom && base !== 0 ? ((val - base) / Math.abs(base)) * 100 : 0;
   const ix = geom ? geom.x(activeIdx) : 0;
   const iy = geom ? geom.y(val) : 0;
@@ -973,14 +999,14 @@ function NetWinningsChart({ values, theme }: { values: number[]; theme: Theme })
           <Svg width={w} height={H}>
             <Defs>
               <LinearGradient id="areaNet" x1="0" y1="0" x2="0" y2="1">
-                <Stop offset="0" stopColor={theme.gain} stopOpacity={0.35} />
-                <Stop offset="1" stopColor={theme.gain} stopOpacity={0} />
+                <Stop offset="0" stopColor={curve} stopOpacity={0.35} />
+                <Stop offset="1" stopColor={curve} stopOpacity={0} />
               </LinearGradient>
             </Defs>
             <Path d={geom.area} fill="url(#areaNet)" />
-            <Path d={geom.line} stroke={theme.gain} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <Path d={geom.line} stroke={curve} strokeWidth={2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
             <Line x1={ix} y1={padT - 6} x2={ix} y2={H} stroke={theme.hairline2} strokeWidth={1} strokeDasharray="4 4" />
-            <Circle cx={ix} cy={iy} r={6} fill={theme.gain} />
+            <Circle cx={ix} cy={iy} r={6} fill={curve} />
             <Circle cx={ix} cy={iy} r={4} fill="#FFFFFF" />
           </Svg>
           {/* floating value pill */}

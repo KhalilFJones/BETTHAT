@@ -1,7 +1,7 @@
 // =============================================================================
 // BETTHAT — Player Details ("Detail Stock", Figma redesign)
 // Light theme (matches Draft Market / Game Setup / Order Details): a dark
-// "Tips off in…" countdown card, Stock Information (avatar + ticker/name +
+// "Tips off in…" countdown card, Stock Information (avatar + name/team +
 // Add/Remove button), a Value container (price / base price / change pill),
 // an interactive price graph (draggable indicator dot + floating tooltip,
 // dashed gridlines, time-range segments), a Tonight's Matchup card, a Last 5
@@ -19,8 +19,9 @@ import Svg, { Path, Circle, Line, Rect, Defs, LinearGradient, Stop, Text as SvgT
 
 import { supabase } from '@/lib/supabase';
 import { useAuthStore } from '@/stores/auth.store';
-import { FONT, fmtPrice, playerLastName, LINEUP_SIZE } from '@/lib/holygrail';
+import { FONT, fmtPrice, fmtTimeWithZone, playerLastName, LINEUP_SIZE } from '@/lib/holygrail';
 import { useTheme, type Theme } from '@/lib/theme';
+import { PlayerHeadshot } from '@/components/media/PlayerHeadshot';
 import { recomputeLineupCap } from '@/hooks/holygrail/lineupOps';
 
 const TIME_RANGES = ['1D', '1W', '1M', '3M', 'All'] as const;
@@ -331,17 +332,13 @@ export default function PlayerDetailScreen() {
             {/* Stock Information */}
             <View style={{ padding: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
               <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ width: 40, height: 40, borderRadius: 100, backgroundColor: theme.surfaceSunken, alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontFamily: FONT.sansBold, fontSize: 16, lineHeight: 24, color: theme.ink }}>
-                    {(p.ticker_handle ?? p.full_name ?? '?').charAt(0).toUpperCase()}
-                  </Text>
-                </View>
+                <PlayerHeadshot player={p} theme={theme} size={48} showTeamCrest />
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.muted2 }}>
-                    {(p.ticker_handle ?? playerLastName(p)).toUpperCase()}
-                  </Text>
-                  <Text numberOfLines={1} style={{ fontFamily: FONT.sans, fontSize: 14, lineHeight: 21, color: theme.ink }}>
+                  <Text numberOfLines={1} style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink }}>
                     {p.full_name}
+                  </Text>
+                  <Text numberOfLines={1} style={{ fontFamily: FONT.sans, fontSize: 14, lineHeight: 21, color: theme.muted2 }}>
+                    {[p.team_abbreviation, p.position].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
               </View>
@@ -702,7 +699,7 @@ function PriceHistoryGraph({
 
 function formatAxisLabel(iso: string, timeOfDay: boolean): string {
   const d = new Date(iso);
-  if (timeOfDay) return d.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true });
+  if (timeOfDay) return d.toLocaleTimeString(undefined, { hour: 'numeric' });
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
@@ -752,7 +749,7 @@ function TonightsMatchupCard({
           </Text>
           {matchup.tipOff ? (
             <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, lineHeight: 24, color: theme.ink, textAlign: 'right' }}>
-              {new Date(matchup.tipOff).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} ET
+              {fmtTimeWithZone(matchup.tipOff)}
             </Text>
           ) : null}
         </View>

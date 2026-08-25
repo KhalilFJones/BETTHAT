@@ -243,7 +243,7 @@ export default function ComposeScreen() {
               <View style={{ position: 'relative', alignSelf: 'flex-start', marginBottom: 4 }}>
                 <Image
                   source={{ uri: gif.preview }}
-                  style={{ width: 200, height: 200, borderRadius: 14, backgroundColor: theme.surfaceSunken }}
+                  style={{ width: 160, aspectRatio: 1.25, borderRadius: 14, backgroundColor: theme.surfaceSunken }}
                   resizeMode="cover"
                   accessibilityLabel="Attached GIF"
                 />
@@ -448,7 +448,7 @@ function MatchupPicker({
                         vs. {oppName}
                       </Text>
                       <Text style={{ fontFamily: FONT.sans, fontSize: 12, color: theme.muted, marginTop: 2 }}>
-                        {phase} · {new Date(m.game_date + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
+                        {phase} · {new Date(m.game_date + 'T12:00:00Z').toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: 'UTC' })}
                       </Text>
                     </View>
                     {live ? (
@@ -532,7 +532,7 @@ function HelpSheet({ theme, visible, onClose }: { theme: Theme; visible: boolean
           </View>
           <Text style={{ fontFamily: FONT.sansBold, fontSize: 18, color: theme.ink, marginBottom: 14 }}>Posting to the feed</Text>
           <HelpRow theme={theme} title="Who sees it" body="Everyone posts land in the public feed. Friends-only posts are visible to you and your accepted friends, and nobody else." />
-          <HelpRow theme={theme} title="Mentions" body="Type a player's ticker in caps — LEBJ23 — or a dollar amount, and it renders highlighted in the feed." />
+          <HelpRow theme={theme} title="Mentions" body="Type a player's name in caps — LEBRON — or a dollar amount, and it renders highlighted in the feed." />
           <HelpRow theme={theme} title="Keep it clean" body="No abuse, no sharing other people's personal details, and nothing that misrepresents an official BETTHAT account." last />
           <Pressable onPress={onClose} style={{ height: 48, borderRadius: 100, backgroundColor: theme.ink, alignItems: 'center', justifyContent: 'center', marginTop: 20 }}>
             <Text style={{ fontFamily: FONT.sansMedium, fontSize: 16, color: theme.surface }}>Got it</Text>
